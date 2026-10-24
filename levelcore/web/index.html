@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Level tool</title>
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="game/game.css">
+  <script type="module" src="js/main.mjs"></script>
+</head>
+<body>
+  <div id="login" class="login" hidden>
+    <form id="login-form" class="login-card">
+      <h1 id="login-title">Level tool</h1>
+      <p id="login-sub" class="muted"></p>
+      <p id="login-msg" class="err"></p>
+      <button id="login-google" class="primary" type="button" hidden>Đăng nhập bằng Google (BI)</button>
+      <div id="login-dev" class="login-dev" hidden>
+        <label>Email (DEV) <input id="login-email" type="email" placeholder="ten@sonat.vn" autocomplete="email"></label>
+        <button type="submit">Vào (DEV)</button>
+      </div>
+      <a id="login-sso" class="btn" hidden>Đăng nhập SSO</a>
+    </form>
+  </div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <div class="brand"><span id="brand-name"></span> <span id="app-version" class="version" title="Phiên bản đang chạy (tag phát hành trên BI Center)"></span></div>
+      <label class="pack-pick">Bộ <select id="pack-select"></select></label>
+      <button id="btn-pack-menu" title="Cài đặt bộ">⚙</button>
+      <button id="btn-new-pack">＋ Bộ</button>
+      <button id="btn-hub-sync" title="Tải lại toàn bộ level của bộ này từ BI Level Hub" hidden>↻ Cập nhật từ Level Hub</button>
+      <span class="sep"></span>
+      <button id="btn-import">Nhập</button>
+      <input id="file-import" type="file" accept=".zip,.json" hidden>
+      <button id="btn-export">Tải zip</button>
+      <button id="btn-validate">Kiểm định bộ</button>
+      <button id="btn-levelhub-bi" title="Các bộ đang có trên BI Level Hub — mở thành bộ riêng, xem lỗi, chạy lại / lưu trữ" hidden>⇩ Level Hub</button>
+      <button id="btn-levelhub">Xuất Level Hub</button>
+      <button id="btn-audit">Audit</button>
+      <span class="grow"></span>
+      <span id="conn" class="conn" title="Kết nối realtime"></span>
+      <span id="online" class="muted"></span>
+      <span id="me" class="muted"></span>
+      <button id="btn-theme" title="Sáng / Tối">◐</button>
+      <button id="btn-logout" title="Đăng xuất">⎋</button>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="list-tools">
+          <input id="search" type="search" placeholder="Tìm số level, người sửa…">
+          <select id="filter-mode" title="Lọc"></select>
+          <button id="btn-new-level" title="Level mới (số trống đầu tiên)">＋ Mới</button>
+        </div>
+        <div id="list-stats" class="muted small"></div>
+        <ul id="level-list" class="level-list"></ul>
+      </aside>
+
+      <section class="panel">
+        <div id="panel-empty" class="empty muted">Chọn một level ở danh sách bên trái</div>
+        <div id="panel-body" hidden>
+          <!-- 1 dòng: Level N · tab · thông tin rev (co lại khi hẹp) · trạng thái · thao tác chính · ⋯ thao tác phụ -->
+          <div class="panel-head">
+            <h2 id="lv-title"></h2>
+            <nav class="tabs">
+              <button data-tab="overview" class="active">Tổng quan</button>
+              <button data-tab="json">JSON</button>
+              <button data-tab="history">Lịch sử</button>
+            </nav>
+            <span id="lv-meta" class="muted small lv-meta"></span>
+            <span id="lv-lock" class="badge"></span>
+            <span id="lv-dirty" class="badge warn" hidden>Chưa lưu</span>
+            <button id="btn-edit">✎ Sửa</button>
+            <button id="btn-done" hidden>Xong</button>
+            <button id="btn-revert" disabled title="Bỏ mọi thay đổi chưa lưu, trả level về bản đã lưu (vẫn giữ quyền sửa)">↺ Hoàn tác</button>
+            <button id="btn-save" class="primary" disabled title="Ctrl+S">Lưu</button>
+            <button id="btn-play" title="Chơi level này bằng game thật (bản WebGL) — kể cả bản nháp chưa lưu">▶ Chơi thử</button>
+            <details class="more-menu">
+              <summary title="Thao tác khác">⋯</summary>
+              <div class="menu">
+                <button id="btn-relevel">Đổi số</button>
+                <button id="btn-promote">Promote →</button>
+                <button id="btn-download">Tải .json</button>
+                <button id="btn-delete" class="danger">Xoá level</button>
+              </div>
+            </details>
+          </div>
+
+          <div class="tab" id="tab-overview">
+            <!-- 3 cột như các tool level khác của công ty: thông số | gameplay ở giữa | thông tin level -->
+            <div class="overview">
+              <!-- cột trái + phần dưới cột phải do game vẽ (game/web/game.mjs renderOverview) -->
+              <div id="game-form" class="col-form"></div>
+              <div class="col-game">
+                <div id="game-dock" class="game-dock"></div>
+              </div>
+              <div class="col-info">
+                <section class="card"><h3>Kiểm định</h3>
+                  <div id="validation" class="validation"></div></section>
+                <div id="game-info"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab" id="tab-json" hidden>
+            <textarea id="json-text" spellcheck="false"></textarea>
+            <div class="row"><button id="btn-json-apply">Áp vào bản nháp</button><span id="json-msg" class="small"></span></div>
+          </div>
+
+          <div class="tab" id="tab-history" hidden>
+            <ul id="history-list" class="history"></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="dialog-root"></div>
+  <div id="toast-root" class="toasts"></div>
+</body>
+</html>

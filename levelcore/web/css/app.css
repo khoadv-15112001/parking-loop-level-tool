@@ -1,0 +1,208 @@
+:root {
+  --lc-bg: #f5f6f8; --lc-surface: #ffffff; --lc-surface-2: #eef0f4; --lc-border: #d9dde5;
+  --lc-text: #1b2230; --lc-muted: #6b7486; --lc-accent: #2f7ef7; --lc-accent-text: #fff;
+  --lc-ok: #1f9d55; --lc-warn: #c27a00; --lc-err: #d33b3b; --lc-sel: #e3edff; --lc-preview-bg: #18202b;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --lc-bg: #0f141b; --lc-surface: #161d27; --lc-surface-2: #1d2633; --lc-border: #2b3646;
+    --lc-text: #e6eaf1; --lc-muted: #8e98aa; --lc-accent: #4b90ff; --lc-sel: #1f3256; --lc-preview-bg: #0b1016;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --lc-bg: #0f141b; --lc-surface: #161d27; --lc-surface-2: #1d2633; --lc-border: #2b3646;
+  --lc-text: #e6eaf1; --lc-muted: #8e98aa; --lc-accent: #4b90ff; --lc-sel: #1f3256; --lc-preview-bg: #0b1016;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--lc-bg); color: var(--lc-text); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+[hidden] { display: none !important; }
+.muted { color: var(--lc-muted); }
+.small { font-size: 12px; }
+.err { color: var(--lc-err); }
+.ok { color: var(--lc-ok); }
+.warn { color: var(--lc-warn); }
+.grow { flex: 1; }
+.sep { width: 1px; align-self: stretch; background: var(--lc-border); margin: 0 4px; }
+.row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+
+button, .btn, select, input, textarea {
+  font: inherit; color: inherit; background: var(--lc-surface); border: 1px solid var(--lc-border);
+  border-radius: 6px; padding: 5px 10px;
+}
+button, .btn { cursor: pointer; text-decoration: none; white-space: nowrap; }
+button:hover:not(:disabled), .btn:hover { border-color: var(--lc-accent); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--lc-accent); color: var(--lc-accent-text); border-color: var(--lc-accent); }
+button.danger { color: var(--lc-err); }
+input[type="number"] { width: 100%; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+
+.login { display: grid; place-items: center; height: 100%; }
+.login-card { background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 12px; padding: 24px;
+  width: min(360px, calc(100% - 32px)); display: grid; gap: 12px; }
+.login-card h1 { margin: 0; }
+.login-card label { display: grid; gap: 4px; }
+
+#app { display: flex; flex-direction: column; height: 100%; }
+.topbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px; background: var(--lc-surface);
+  border-bottom: 1px solid var(--lc-border); }
+.brand { font-weight: 700; margin-right: 8px; }
+.brand .version { font-weight: 400; font-size: 11px; color: var(--lc-muted); }
+.pack-pick select { margin-left: 4px; }
+.conn { width: 10px; height: 10px; border-radius: 50%; background: var(--lc-err); display: inline-block; }
+.conn.on { background: var(--lc-ok); }
+
+.layout { flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }
+.sidebar { border-right: 1px solid var(--lc-border); display: flex; flex-direction: column; min-height: 0; background: var(--lc-surface); }
+.list-tools { display: flex; gap: 6px; padding: 8px; }
+.list-tools input { flex: 1; min-width: 0; }
+#list-stats { padding: 0 10px 6px; }
+.level-list { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
+.level-list li { display: grid; grid-template-columns: 44px 1fr auto; gap: 2px 8px; padding: 6px 10px; cursor: pointer;
+  border-bottom: 1px solid var(--lc-surface-2); }
+.level-list li:hover { background: var(--lc-surface-2); }
+.level-list li.muted { display: block; cursor: default; }
+.level-list li.sel { background: var(--lc-sel); }
+.level-list .num { font-weight: 700; font-size: 16px; grid-row: span 2; align-self: center; }
+.level-list .tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.level-list .sub { grid-column: 2 / 4; }
+.level-list .invalid .num { color: var(--lc-err); }
+.badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--lc-surface-2);
+  border: 1px solid var(--lc-border); white-space: nowrap; }
+.badge.warn { color: var(--lc-warn); border-color: currentColor; }
+.badge.err { color: var(--lc-err); border-color: currentColor; }
+
+.panel { overflow: auto; min-width: 0; display: flex; flex-direction: column; }
+#panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#panel-body > .tab { flex: 1; min-height: 0; overflow: auto; }
+#panel-body > #tab-overview { overflow: hidden; padding: 10px 12px; }
+.empty { padding: 40px; text-align: center; }
+.panel-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; position: sticky; top: 0;
+  background: var(--lc-bg); z-index: 2; border-bottom: 1px solid var(--lc-border); }
+.panel-head h2 { margin: 0 6px 0 0; font-size: 18px; }
+.tabs { display: flex; gap: 4px; padding: 8px 16px 0; }
+.tabs button { border-radius: 6px 6px 0 0; border-bottom: 0; }
+.tabs button.active { background: var(--lc-sel); border-color: var(--lc-accent); }
+.tab { padding: 12px 16px 24px; }
+
+/* Tổng quan: thông số (trái) | gameplay (giữa, to nhất) | thông tin (phải); mỗi cột tự cuộn, game luôn cao bằng màn hình */
+.overview { display: grid; grid-template-columns: minmax(340px, 440px) minmax(380px, 1fr) minmax(230px, 290px); gap: 12px;
+  height: 100%; }
+.overview > div { min-height: 0; min-width: 0; }
+.col-form, .col-info { overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
+.col-game { display: flex; }
+#game-info { display: contents; }   /* card của game nằm thẳng trong cột phải (cùng khoảng cách) */
+.overview .card { background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 10px; padding: 10px 12px; }
+.overview h3 { margin: 0 0 8px; font-size: 14px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
+.form-grid label { display: grid; gap: 2px; font-size: 12px; color: var(--lc-muted); }
+.form-grid label.check { display: flex; align-items: center; gap: 6px; color: var(--lc-text); font-size: 14px; }
+.form-grid input:not([type="checkbox"]), .form-grid select { width: 100%; color: var(--lc-text); }
+.validation { display: grid; gap: 4px; font-size: 13px; }
+.validation .err::before { content: "✗ "; }
+.validation .warn::before { content: "! "; }
+.validation .ok::before { content: "✓ "; }
+
+#json-text { width: 100%; min-height: 60vh; font: 12px/1.4 ui-monospace, Consolas, monospace; resize: vertical; }
+.history { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.history > li { background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 8px; padding: 8px 12px; }
+.history .changes { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
+
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; z-index: 50; padding: 16px; }
+.dialog { background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 12px; padding: 18px;
+  width: min(720px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: grid; gap: 10px; }
+.dialog h3 { margin: 0; }
+.dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.dialog label { display: grid; gap: 3px; font-size: 13px; }
+.dialog label.check { display: flex; align-items: center; gap: 6px; }
+.dialog .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
+.dialog table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dialog td, .dialog th { padding: 3px 6px; border-bottom: 1px solid var(--lc-surface-2); text-align: left; vertical-align: top; }
+.dialog pre { white-space: pre-wrap; font-size: 12px; background: var(--lc-surface-2); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
+
+.toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 60; }
+.toast { background: var(--lc-surface); border: 1px solid var(--lc-border); border-left: 4px solid var(--lc-accent);
+  border-radius: 8px; padding: 8px 12px; max-width: 420px; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+.toast.err { border-left-color: var(--lc-err); color: var(--lc-text); }
+.toast.ok { border-left-color: var(--lc-ok); color: var(--lc-text); }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
+  .sidebar { border-right: 0; border-bottom: 1px solid var(--lc-border); }
+  .overview { grid-template-columns: 1fr; height: auto; }
+  #panel-body > #tab-overview { overflow: auto; }
+  .game-dock { height: 75vh; }
+}
+/* Laptop (≤1500px, vd 1920px màn hình scale 150% ≈ 1280px): 2 cột — thông số trên + thông tin dưới (mỗi phần tự cuộn) |
+   game bên phải. 3 cột ở cỡ này không đủ chỗ, khung game đè lên cột thông tin. */
+@media (min-width: 901px) and (max-width: 1500px) {
+  .layout { grid-template-columns: 240px 1fr; }
+  .overview { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+  .col-form { grid-column: 1; grid-row: 1; }
+  .col-info { grid-column: 1; grid-row: 2; }
+  .col-game { grid-column: 2; grid-row: 1 / 3; }
+}
+
+.login-dev { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--lc-border); }
+.lhb-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; max-height: 45vh;
+  overflow: auto; padding: 6px; border: 1px solid var(--lc-border); border-radius: 6px; }
+.dialog textarea { width: 100%; min-height: 70px; font: inherit; }
+
+/* ▶ Chơi thử bằng game thật: khung game WebGL (tỉ lệ điện thoại 1:2) nổi bên phải */
+.webgame {
+  position: fixed; right: 12px; top: 56px; bottom: 12px; z-index: 50; width: min(400px, calc(100vw - 24px));
+  display: flex; flex-direction: column; background: var(--lc-surface); border: 1px solid var(--lc-border);
+  border-radius: 10px; box-shadow: 0 8px 28px rgba(0, 0, 0, .28); overflow: hidden;
+}
+.webgame .wg-head { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--lc-border); }
+.webgame .wg-head .grow { flex: 1; }
+.webgame .wg-head button, .webgame .wg-head select { padding: 2px 7px; }
+.webgame .wg-status { padding: 4px 10px; min-height: 1.4em; }
+.webgame .wg-status.ok { color: var(--lc-ok); } .webgame .wg-status.err { color: var(--lc-err); } .webgame .wg-status.warn { color: var(--lc-warn); }
+.webgame .wg-frame { flex: 1; min-height: 0; background: #000; }
+.webgame iframe { width: 100%; height: 100%; border: 0; display: block; }
+.webgame .wg-results { margin: 0; padding: 4px 10px 8px 26px; max-height: 120px; overflow: auto; }
+.webgame .wg-results:empty { display: none; }
+.webgame.min { top: auto; height: auto; }
+.webgame.min .wg-frame, .webgame.min .wg-results { display: none; }
+@media (max-width: 700px) { .webgame { top: 8px; right: 8px; bottom: 8px; width: calc(100vw - 16px); } }
+.webgame.preview [data-act="win"], .webgame.preview [data-act="lose"], .webgame.preview [data-act="restart"],
+.webgame.preview .wg-speed, .webgame.preview .wg-results { display: none; }
+
+/* Khung game gắn ở cột preview (thay preview vẽ chấm): mở level là xem bằng game thật */
+.game-dock { flex: 1; min-height: 480px; }
+.webgame.docked { position: relative; inset: auto; width: 100%; height: 100%; z-index: auto; box-shadow: none; }
+.game-missing { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border: 1px dashed var(--lc-border); border-radius: 10px; color: var(--lc-muted); padding: 16px; text-align: center; }
+
+/* Header panel 1 dòng: tiêu đề + tab + meta (co lại, cắt …) + trạng thái + nút; thao tác phụ trong menu ⋯ */
+.panel-head { flex-wrap: nowrap; padding: 6px 12px; gap: 6px; }
+.panel-head h2 { font-size: 17px; white-space: nowrap; }
+.panel-head .tabs { padding: 0; margin: 0 6px 0 2px; flex: none; }
+.panel-head .tabs button { border-radius: 6px; border-bottom: 1px solid var(--lc-border); padding: 3px 10px; }
+.panel-head .tabs button.active { border-color: var(--lc-accent); }
+.panel-head .lv-meta { flex: 1 1 0; min-width: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-head > button, .panel-head .badge { flex: none; }
+.more-menu { position: relative; flex: none; }
+.more-menu > summary { list-style: none; cursor: pointer; border: 1px solid var(--lc-border); border-radius: 6px; padding: 4px 10px;
+  background: var(--lc-surface); user-select: none; }
+.more-menu > summary::-webkit-details-marker { display: none; }
+.more-menu[open] > summary { border-color: var(--lc-accent); }
+.more-menu .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: grid; gap: 4px; min-width: 150px;
+  background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 8px; padding: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
+.more-menu .menu button { text-align: left; }
+@media (max-width: 900px) { .panel-head { flex-wrap: wrap; } }
+/* khung game: tiêu đề + trạng thái + nút trên 1 dòng */
+.webgame .wg-head .wg-title { white-space: nowrap; flex: none; }
+.webgame .wg-head .wg-status { flex: 1; min-width: 0; padding: 0 8px; min-height: 0; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+/* khung game không bao giờ rộng hơn cột của nó (header 1 dòng co lại, chữ trạng thái cắt …) */
+.col-game > .game-dock, .col-game .webgame { min-width: 0; max-width: 100%; }
+.webgame .wg-head { min-width: 0; }
+.webgame .wg-head > button { flex: none; }

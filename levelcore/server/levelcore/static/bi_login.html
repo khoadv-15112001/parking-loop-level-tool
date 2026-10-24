@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Đăng nhập BI</title>
+<style>
+  body{font:14px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#14161a;color:#e7e9ee;display:grid;place-items:center;min-height:100vh;box-sizing:border-box}
+  main{max-width:340px;text-align:center}
+  h1{font-size:16px;margin:0 0 6px}
+  p{margin:6px 0;color:#aab0bd}
+  button{margin-top:12px;padding:9px 18px;font:inherit;border:0;border-radius:6px;background:#4a8cff;color:#fff;cursor:pointer}
+  button[hidden]{display:none}
+  .bad{color:#ff7b7b}
+  code{background:#23262d;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body data-api-key="{apiKey}" data-auth-domain="{authDomain}" data-project-id="{projectId}" data-app-id="{appId}" data-env="{env}">
+<main>
+  <h1>Đăng nhập BI (<span id="env"></span>)</h1>
+  <p id="msg">Đang kiểm tra phiên đăng nhập…</p>
+  <button id="go" type="button" hidden>Đăng nhập bằng Google</button>
+</main>
+<script src="{sdk}/firebase-app-compat.js"></script>
+<script src="{sdk}/firebase-auth-compat.js"></script>
+<script src="/bi/login.js"></script>
+</body>
+</html>

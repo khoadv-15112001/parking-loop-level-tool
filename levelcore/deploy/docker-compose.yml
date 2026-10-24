@@ -1,0 +1,19 @@
+# Chạy thử image giống BI Center trên máy: docker compose -f levelcore/deploy/docker-compose.yml up -d --build
+# Biến <PREFIX>_* (BI, admin…) đọc từ .env ở gốc repo (mẫu game/.env.example).
+services:
+  leveltool:
+    build:
+      context: ../..
+      dockerfile: levelcore/deploy/Dockerfile
+    image: leveltool-server:latest
+    restart: unless-stopped
+    env_file:
+      - path: ../../.env
+        required: false
+    volumes:
+      - leveltool-data:/data
+    ports:
+      - "8880:8000"
+
+volumes:
+  leveltool-data:
