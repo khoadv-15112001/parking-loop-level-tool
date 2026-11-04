@@ -1,12 +1,19 @@
 // Form thuộc tính dựng từ `game.fields` ([{path, label, type, options?, min?, max?, step?, hint?}]): number · text ·
 // bool · select. Chỉ ghi đúng đường dẫn của field vừa sửa, mọi field khác của level giữ nguyên. Ô số để trống = bỏ khoá đó.
+// `path`: mảng khoá / chỉ số (['goals', 0, 'count']) hoặc chuỗi có dấu chấm ('goals.0.count', 'time').
 import { esc } from './ui.mjs';
 
-export function getPath(obj, path) {
-  return path.reduce((o, k) => (o != null && typeof o === 'object' ? o[k] : undefined), obj);
+export function pathOf(path) {
+  const parts = Array.isArray(path) ? path : String(path ?? '').split('.').filter(Boolean);
+  return parts.map(k => (typeof k === 'string' && /^\d+$/.test(k) ? Number(k) : k));
 }
 
-export function setPath(obj, path, value) {
+export function getPath(obj, path) {
+  return pathOf(path).reduce((o, k) => (o != null && typeof o === 'object' ? o[k] : undefined), obj);
+}
+
+export function setPath(obj, rawPath, value) {
+  const path = pathOf(rawPath);
   let o = obj;
   for (const k of path.slice(0, -1)) {
     if (o[k] == null || typeof o[k] !== 'object') o[k] = typeof k === 'number' ? [] : {};
@@ -36,14 +43,16 @@ function input(f, value, id, readOnly) {
 }
 
 /** Vẽ form vào root. onChange() được gọi sau khi level đã sửa tại chỗ. */
-export function renderFields(root, fields, level, { readOnly = false, onChange = () => {} } = {}) {
+export function renderFields(root, allFields, level, { readOnly = false, onChange = () => {} } = {}) {
+  const fields = allFields.filter(f => f && pathOf(f.path).length);
+  const skipped = allFields.length - fields.length;
   root.innerHTML = `<section class="card"><h3>Thông số</h3><div class="form-grid">${fields.map((f, i) => {
     const id = `lc-field-${i}`;
     const hint = f.hint ? ` title="${esc(f.hint)}"` : '';
     return f.type === 'bool'
       ? `<label class="check"${hint}>${input(f, getPath(level, f.path), id, readOnly)} ${esc(f.label)}</label>`
       : `<label${hint}>${esc(f.label)}${input(f, getPath(level, f.path), id, readOnly)}</label>`;
-  }).join('')}</div></section>`;
+  }).join('')}</div>${skipped ? `<p class="small err">${skipped} field khai thiếu path — xem fields của game</p>` : ''}</section>`;
   fields.forEach((f, i) => {
     const el = root.querySelector(`#lc-field-${i}`);
     el.addEventListener('change', () => {

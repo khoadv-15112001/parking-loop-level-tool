@@ -159,7 +159,8 @@ core dùng mặc định ở cột cuối.
 | `hubLayout` | `(level) → string` | cột `layout` của Level Hub | `""` |
 | `fields` | mảng `{path, label, type, options?, min?, max?, step?, hint?}` | form tab Tổng quan (vỏ của core) | không có form |
 
-`fields`: `path` là mảng khoá / chỉ số (`['settings', 'time']`, `['goals', 0, 'count']`); `type` là `number`, `text`,
+`fields`: `path` là mảng khoá / chỉ số (`['settings', 'time']`, `['goals', 0, 'count']`) hoặc chuỗi có dấu chấm
+(`'time'`, `'goals.0.count'`); `type` là `number`, `text`,
 `bool` hoặc `select`; `options` của `select` là mảng giá trị hoặc `{value, label}`, giá trị giữ đúng kiểu (số vẫn là số).
 Form chỉ ghi đúng field vừa sửa, field khác của level giữ nguyên.
 
