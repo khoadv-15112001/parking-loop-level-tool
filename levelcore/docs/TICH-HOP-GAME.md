@@ -51,6 +51,7 @@ WebGL của game nói chuyện được với tool (bridge), một dòng `levelT
 | Release `sonat-game-cicd` 2.7.0 / 2.7.1 / 2.7.3 | Thay đổi build WebGL (WebAssembly 2023, LiveOps) | https://github.com/SonatGameShared/sonat-game-cicd/releases |
 | Repo core | Code, hợp đồng, template | https://github.com/SonatGameProduct/level-tool-core |
 | Tool đang chạy để tham khảo cách làm | Sand Jam (Node, tự làm giao diện), Antopia | https://github.com/SonatGameProduct/sand-jam-level-tool · https://github.com/SonatGameProduct/antopia-level-tool |
+| Tính năng từng màn của Sand Jam, ảnh đánh số | Chọn tính năng cho tool mới, biết phần nào core đã có | [SANDJAM-TINH-NANG.md](SANDJAM-TINH-NANG.md) |
 
 Các yêu cầu của BI (đóng gói tool, Firebase, Level Hub) đã có sẵn thành skill cho Claude Code: `bi-onboard`, `bi-new`,
 `bi-yaml`, `bi-release` (repo `SonatBI/level-tool-template` hoặc zip ở thư mục Drive trên).

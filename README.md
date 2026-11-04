@@ -20,6 +20,8 @@ thanh trạng thái (kết nối, bản game, người online) ở đáy, tìm n
 
 ![Sand Jam: kho level](levelcore/docs/images/sandjam-library.webp)
 
+Từng màn của Sand Jam có gì, ảnh đánh số và phần nào core đã có: [levelcore/docs/SANDJAM-TINH-NANG.md](levelcore/docs/SANDJAM-TINH-NANG.md).
+
 ### Antopia — https://antopia.tools.sonatgame.com/
 
 | Không gian làm việc | Gallery |
@@ -33,6 +35,7 @@ thanh trạng thái (kết nối, bản game, người online) ở đáy, tìm n
 | Đọc khi | File |
 | --- | --- |
 | **Làm tool cho game mới**: đủ các bước repo tool, Unity (bản WebGL, bridge), Jenkins, BI, Level Hub, kèm link tài liệu CI/CD và BI | [levelcore/docs/TICH-HOP-GAME.md](levelcore/docs/TICH-HOP-GAME.md) |
+| Muốn biết một tool hoàn chỉnh có gì: tính năng từng màn của Sand Jam, ảnh đánh số, đánh dấu phần core đã có / game tự làm | [levelcore/docs/SANDJAM-TINH-NANG.md](levelcore/docs/SANDJAM-TINH-NANG.md) |
 | Quy tắc cho người và AI agent làm tool (chỗ được sửa, chạy, test, giao diện, changelog) | [levelcore/AGENTS.md](levelcore/AGENTS.md) |
 | Core có gì, biến môi trường, hook giao diện, nâng core | [levelcore/README.md](levelcore/README.md) |
 | Hợp đồng của hai server: route, manifest, module luật, bridge WebGL, CI v1 | [levelcore/contracts/README.md](levelcore/contracts/README.md) |
