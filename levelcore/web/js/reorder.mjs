@@ -52,7 +52,7 @@ export function mountOrder(shell, root, tools) {
     <div class="ord-main"><div id="ro-chart" class="ord-chart"></div>
       <div class="ord-wrap"><table class="ord-table"><thead></thead><tbody></tbody></table></div>
       <div id="ro-selbar" class="selbar" hidden></div></div>
-    <aside id="ro-detail" class="detail" hidden></aside></div>`;
+    <aside id="ro-detail" class="detail" hidden></aside><div class="grip detail-grip" data-pref="detailW" data-edge="left"></div></div>`;
   const tbody = $('tbody', root), detail = $('#ro-detail', root), selbar = $('#ro-selbar', root);
 
   const readOnly = () => (!shell.features().reorder ? 'Chỉ xem: server này chưa hỗ trợ xếp lại thứ tự'

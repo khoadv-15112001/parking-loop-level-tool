@@ -86,10 +86,33 @@ Package `gameplugin` có biến `GAME = GamePlugin(...)` ([`server/levelcore/plu
 Server: `uvicorn --factory levelcore.main:get_app` với `PYTHONPATH=levelcore/server;game/server`
 (`LEVELCORE_GAME_MODULE` đổi tên module plugin).
 
-## Plugin web — `game/web/game.mjs` (game cũ, hoặc game cần danh sách / tab Tổng quan riêng)
+## Giao diện của game: theme, hook, bố cục
+
+Ba mức, từ ít việc tới nhiều việc:
+
+1. **Không viết gì**: vỏ của core dựng mọi màn từ manifest và module luật (`fields`, `levelSummary`, `thumbnail`).
+2. **`game/web/ui.mjs`** (game khai bằng manifest): chỉ export những hook game thêm (`export default {...}`), core gộp với
+   phần dựng từ manifest. Theme: `game/web/game.css` đổi biến màu `--lc-*`. Không có file nào thì server trả mặc định rỗng.
+3. **Giao diện riêng hoàn toàn**: `"app"` trong manifest (xem `AGENTS.md`).
+
+Hook hay dùng ở `ui.mjs` (bảng dưới có đủ):
+
+| Hook | |
+| --- | --- |
+| `renderEditor(ctx)` | editor của game chiếm phần chính màn Level (canvas, bảng công cụ…). `ctx = {el, level, editable, pack, name, changed(), setHighlight(id), toast}`: vẽ vào `ctx.el`, sửa `ctx.level` tại chỗ rồi gọi `ctx.changed()`. Trả `{update(level, {editable}), destroy()}`: core gọi `update` khi bản nháp đổi từ chỗ khác (form, JSON, hoàn tác) hay bấm Sửa / Xong; không có `update` thì core dựng lại. Khung game WebGL khi đó ở tab Chơi thử hoặc cột phải (GD chọn ở ▦ Bố cục) |
+| `levelDetail(summary, lv) → HTML` | thêm vào cột chi tiết của Thư viện / Thứ tự (HTML do game `esc`) |
+| `listItem(summary) → {tags, sub}` | `tags` (HTML) hiện ở danh sách level và thẻ Thư viện |
+| `layout` | bố cục mặc định của game: `{list, form: 'left'\|'right'\|'hide', info, game: 'tab'\|'right', hints, listW, formW, infoW, gameW, detailW}` (manifest `layout` cũng được) |
+| `shortcuts`, `onShortcut(id)` | phím của editor; hiện ở dòng gợi ý phím khi đang sửa |
+
+GD tự chỉnh bố cục trên trình duyệt của mình (▦ Bố cục ở hàng level, menu tài khoản, Ctrl+K "Bố cục"): ẩn / hiện danh
+sách, cột thông số trái / phải / ẩn, chỗ đặt khung game, cột thông tin, dòng gợi ý phím; kéo mép cột (danh sách, thông
+số, khung game, thông tin, cột chi tiết) để đổi độ rộng, bấm đúp mép để về mặc định. Lưu ở `<storagePrefix>.layout`.
+
+## Plugin web — `game/web/game.mjs` (game cũ, hoặc game muốn viết lại hết phần game.mjs)
 
 Core phục vụ `levelcore/web` ở `/app/` và `game/web` ở `/app/game/`. Vỏ app nạp `/app/game/game.mjs` (export default)
-và `/app/game/game.css`:
+và `/app/game/game.css`. Game khai bằng manifest không cần file này (core dựng từ manifest, gộp `ui.mjs`):
 
 | Trường | |
 | --- | --- |
@@ -100,7 +123,8 @@ và `/app/game/game.css`:
 | `validateLevel`, `blankLevel(n, template)` | |
 | `visualKey(level)` | đổi giá trị này thì khung game dựng lại level |
 | `listFilters`, `matchFilter(summary, value)`, `searchText(summary)`, `listItem(summary) → {tags, sub}` | danh sách level |
-| `renderOverview(ctx)` | tab Tổng quan: vẽ `ctx.form` (cột trái) + `ctx.info` (dưới thẻ Kiểm định, cột phải). `ctx = {level, editable, highlight, setHighlight(id), changed(), toast}` — sửa `ctx.level` tại chỗ rồi gọi `ctx.changed()` |
+| `renderOverview(ctx)` | tab Tổng quan: vẽ `ctx.form` (cột thông số, dưới form của core) + `ctx.info` (cột thông tin). `ctx = {level, editable, highlight, setHighlight(id), changed(), toast}` — sửa `ctx.level` tại chỗ rồi gọi `ctx.changed()`; vẽ lại mỗi lần bản nháp đổi |
+| `renderEditor`, `levelDetail`, `layout` | như ở `ui.mjs` (mục trên) |
 
 Biến màu CSS của core: `--lc-*` (`--lc-surface`, `--lc-border`, `--lc-sel`, `--lc-accent`, `--lc-err`…).
 

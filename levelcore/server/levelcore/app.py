@@ -442,7 +442,7 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
 
         # Game không có game.mjs riêng thì dùng game.mjs mặc định của core (dựng từ manifest + module luật).
         core_web = web / "levelcore" / "web"
-        fallbacks = {"game.mjs": core_web / "js" / "default_game.mjs"}
+        fallbacks = {"game.mjs": core_web / "js" / "default_game.mjs", "ui.mjs": core_web / "js" / "empty_ui.mjs"}
         if game.manifest_file:
             fallbacks.update({"manifest.json": Path(game.manifest_file), "rules.mjs": Path(game.validator_module)})
         web_types = {".mjs": "text/javascript", ".js": "text/javascript", ".json": "application/json", ".css": "text/css"}

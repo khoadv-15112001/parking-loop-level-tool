@@ -80,6 +80,7 @@ test('generator: game sinh ra chạy trên server Node với giao diện mặc �
   assert.equal((await (await get('/app/game/manifest.json')).json()).tool, 'FishLevel');
   assert.equal((await get('/app/game/rules.mjs')).status, 200);
   assert.equal(await (await get('/app/game/game.css')).text(), '');
+  assert.match(await (await get('/app/game/ui.mjs')).text(), /export default \{\};/);
   assert.equal((await (await get('/app/game/releases.json')).json())[0].version, '0.1.0');
   const created = await fetch(`${base}/api/packs/develop/levels/1`, { method: 'POST', headers: { 'X-Dev-User': 'a@sonat.vn', 'Content-Type': 'application/json' }, body: '{"grid":[[1,0],[0,1]]}' });
   assert.equal(created.status, 201);

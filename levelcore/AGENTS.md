@@ -38,6 +38,10 @@ Game cần core làm thêm việc gì thì thêm điểm mở rộng ở repo co
 
 - Chưa làm gì thì tool dùng vỏ của core (danh sách, form từ `fields`, JSON, lịch sử, nhập / xuất, Level Hub, chơi thử).
   Vỏ này nằm trong `levelcore/`; không chép nó hay code giao diện của game khác vào `game/`.
+- Đổi ít trước khi đổi nhiều: màu → `game/web/game.css` (biến `--lc-*`); editor riêng của game (canvas, bảng công cụ),
+  chip ở danh sách / Thư viện, bố cục mặc định → `game/web/ui.mjs` chỉ chứa hook game thêm (`renderEditor`,
+  `levelDetail`, `listItem`, `layout`, `shortcuts`; bảng ở `levelcore/README.md`). Các màn Thư viện, Thứ tự, Tổng quan
+  bộ, Hoạt động, tìm nhanh, bố cục GD tự chỉnh vẫn của core. Chỉ khi cả cách làm việc khác hẳn mới dùng `"app"`.
 - Game muốn giao diện riêng thì tự thiết kế cho đúng cách GD làm việc với game đó: thư mục riêng (vd `game/app/`), khai
   `"app": "app"` trong manifest. Khi đó `/app/` là giao diện của game; module của core import ở `/core/js/`: `api.mjs`
   (gọi `setStoragePrefix` trước), `sync.mjs` (SSE, khoá), `query.mjs` (tìm theo số, dải, chữ không dấu), `fields.mjs`,

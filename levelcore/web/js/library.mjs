@@ -27,6 +27,7 @@ export function detailHtml(shell, lv) {
     <div class="d-head"><h3>Level ${esc(lv.name)}</h3>${st ? `<span class="chip ${st}">${esc(CHECK_LABEL[st])}</span>` : ''}
       ${lv.lock ? `<span class="badge warn" title="Đang sửa">🔒 ${esc(shortUser(lv.lock.holder))}</span>` : ''}</div>
     <div class="stats">${summaryPairs(lv.summary).slice(0, 9).map(([k, v]) => `<div class="stat"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
+    ${shell.game.levelDetail ? `<div class="d-game">${shell.game.levelDetail(lv.summary || {}, lv) || ''}</div>` : ''}
     <p class="small muted">r${esc(lv.head_rev)} · ${esc(shortUser(lv.author))} · ${esc(fmtTime(lv.updated_at))}</p>
     <div class="d-actions"><button class="primary" data-act="open" title="Mở ở màn Level để xem, sửa (bấm đúp thẻ cũng mở)">Mở level</button>
       ${f.webgame ? '<button data-act="play" title="Chơi level này bằng game thật">▶ Chơi thử</button>' : ''}
@@ -80,7 +81,7 @@ export function mountLibrary(shell, root, tools) {
   root.innerHTML = `<div class="lib">
     <div class="lib-main"><ul id="lib-grid" class="cards"></ul>
       <div id="lib-selbar" class="selbar" hidden></div></div>
-    <aside id="lib-detail" class="detail" hidden></aside></div>`;
+    <aside id="lib-detail" class="detail" hidden></aside><div class="grip detail-grip" data-pref="detailW" data-edge="left"></div></div>`;
   const grid = $('#lib-grid', root), detail = $('#lib-detail', root), selbar = $('#lib-selbar', root);
 
   const group = () => defaultGroup(shell.state.levels, shell.game.overview || {}, numericKeys(shell.state.levels)[0]);
@@ -97,6 +98,8 @@ export function mountLibrary(shell, root, tools) {
     return out;
   }
 
+  const tags = lv => shell.game.listItem?.(lv.summary || {})?.tags || '';   // chip của game (HTML game đã esc), như ở danh sách
+
   function card(lv, color, g) {
     const st = checkState(shell.state, lv.name);
     const sum = summaryPairs(lv.summary).filter(([k]) => k !== g).slice(0, 4).map(([k, v]) => `${k} ${v}`).join(' · ');
@@ -106,6 +109,7 @@ export function mountLibrary(shell, root, tools) {
         ${g && lv.summary?.[g] != null ? `<span class="gchip" style="--c:${color(lv.summary[g])}">${esc(lv.summary[g])}</span>` : ''}
         ${lv.lock ? `<span title="${esc(shortUser(lv.lock.holder))} đang sửa">🔒</span>` : ''}</div>
       <div class="c-sum small muted" title="${esc(sum)}">${esc(sum)}</div>
+      ${tags(lv) ? `<div class="c-tags">${tags(lv)}</div>` : ''}
       <div class="c-by small muted">r${esc(lv.head_rev)} · ${esc(shortUser(lv.author))} · ${esc(fmtTime(lv.updated_at))}</div></li>`;
   }
 

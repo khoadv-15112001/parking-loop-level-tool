@@ -17,7 +17,7 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Server Node đủ route như server Python; bản game từ Jenkins: nhánh theo dõi lên ngay, nhánh khác chờ admin chọn.
 - Chơi thử: link + QR cho điện thoại, ▶ Chơi rN trong Lịch sử, mọi lượt chơi được lưu (xuất JSONL cho phân tích, AI).
 - Màn Thư viện (lưới ảnh, lọc, chọn nhiều), Thứ tự (kéo thả, ghim, hoàn tác), Tổng quan bộ, Hoạt động; tìm nhanh Ctrl+K.
-- Thùng rác, Quản trị trong app (quyền theo việc, thông báo chung, sao lưu), phím tắt đổi được, bảng Có gì mới.
+- Thùng rác, Quản trị (quyền, thông báo, sao lưu), phím tắt đổi được; mỗi người tự chỉnh bố cục (cột, khung game).
 
 ### Thay đổi
 - Tìm level theo số, dải `10-20`, danh sách `2,5,9` và chữ không dấu; form thuộc tính từ `fields` của game.
@@ -28,7 +28,7 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 
 ### Cho Dev
 - Route mới (chỉ server Node): `/api/plays*`, `/api/links*`, `/p/<token>*`, `/api/thumbs/*`, `/reorder`, `/api/admin/*`.
-- Biến `<PREFIX>_CI_TOKEN|CI_BRANCH|CI_PACK`; manifest thêm `slug`, `storagePrefix`, `webgame`, `app`, `overview`.
+- Biến `<PREFIX>_CI_*`; manifest thêm `slug`, `storagePrefix`, `webgame`, `app`, `overview`, `layout`.
 - DB: bảng `ci_levels`, `settings`, `plays`, `play_events`, `share_links`, `thumbs`; revision ghi `formatVersion`.
 - Bridge: `ready {caps: ['capture']}`, lệnh `Capture`, sự kiện `{type: 'event'}` vào lượt chơi, `src=` ở `level_start`.
-- Mới: `deploy/Dockerfile.node`, `RUNTIME` trong `game.env`, `AGENTS.md`, skill `levelcore-new-game`; bỏ template plugin.
+- Mới: `deploy/Dockerfile.node`, `RUNTIME`, skill `levelcore-new-game`, `game/web/ui.mjs` (`renderEditor`, `levelDetail`).

@@ -39,6 +39,7 @@ def test_new_game_py_scaffolds_a_python_runtime_game(tmp_path):
         assert c.get("/app/game/manifest.json").json()["tool"] == "FishLevel"
         assert c.get("/app/game/rules.mjs").status_code == 200
         assert c.get("/app/game/game.css").text == ""
+        assert "export default {};" in c.get("/app/game/ui.mjs").text
         assert c.get("/app/game/releases.json").json()[0]["version"] == "0.1.0"
         assert c.post("/api/packs/develop/levels/1", json={"grid": [[1, 0], [0, 1]]}).status_code == 201
     app.state.db.close()

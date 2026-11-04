@@ -439,6 +439,7 @@ export function createApp(game, s) {
   // Game không có game.mjs riêng thì dùng game.mjs mặc định của core (dựng từ manifest + module luật).
   const gameWebFallback = {
     'game.mjs': path.join(coreWebDir, 'js', 'default_game.mjs'), 'manifest.json': game.manifestPath, 'rules.mjs': game.rulesPath,
+    'ui.mjs': path.join(coreWebDir, 'js', 'empty_ui.mjs'),
   };
 
   function serveGameWeb(res, rel) {

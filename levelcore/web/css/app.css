@@ -143,11 +143,12 @@ label.inline select, label.inline input { color: var(--lc-text); font-size: 13px
   box-shadow: 0 -4px 14px rgba(0, 0, 0, .08); }
 
 /* ───── màn Level: danh sách | level đang mở ───── */
-.layout { flex: 1; display: grid; grid-template-columns: clamp(230px, 19vw, 320px) 1fr; min-height: 0; }
-body.focus .layout { grid-template-columns: 0 1fr; }
-body.focus .sidebar { display: none; }
+.layout { flex: 1; display: grid; grid-template-columns: var(--lc-list-w, 270px) minmax(0, 1fr); min-height: 0; }
+body.no-list .layout { grid-template-columns: 0 minmax(0, 1fr); }
+body.no-list .sidebar { display: none; }
+body.no-hints .hintbar { display: none; }
 #btn-focus.active { border-color: var(--lc-accent); color: var(--lc-accent); }
-.sidebar { border-right: 1px solid var(--lc-border); display: flex; flex-direction: column; min-height: 0; background: var(--lc-surface); }
+.sidebar { border-right: 1px solid var(--lc-border); display: flex; flex-direction: column; min-height: 0; background: var(--lc-surface); position: relative; }
 .list-tools { display: grid; gap: 6px; padding: 8px; }
 .list-tools input, .list-tools select { width: 100%; min-width: 0; }
 .list-foot { display: grid; gap: 4px; padding: 8px; border-top: 1px solid var(--lc-border); }
@@ -165,18 +166,35 @@ body.focus .sidebar { display: none; }
 .level-list .invalid .num { color: var(--lc-err); }
 
 .panel { overflow: auto; min-width: 0; display: flex; flex-direction: column; }
-#panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 #panel-body > .tab { flex: 1; min-height: 0; overflow: auto; }
 #panel-body > #tab-overview { overflow: hidden; padding: 10px 12px; }
 .empty { padding: 40px; text-align: center; }
 .tab { padding: 12px 16px 24px; }
 
-/* Tổng quan của level: thông số + kiểm định (trái) | khung game (to nhất) | thông tin của game (phải, khi có) */
-.overview { display: grid; grid-template-columns: minmax(250px, 340px) minmax(0, 1fr); gap: 12px; height: 100%; }
+/* Tổng quan của level: cột xếp bằng JS theo bố cục người dùng (main.mjs layOverview); mỗi cột tự cuộn */
+.overview { display: grid; grid-template-columns: var(--lc-form-w) minmax(0, 1fr); gap: 12px; height: 100%; position: relative; }
 .overview > div { min-height: 0; min-width: 0; }
-.col-form, .col-info { overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
-.col-game { display: flex; }
-.overview.with-info { grid-template-columns: minmax(250px, 340px) minmax(0, 1fr) minmax(220px, 280px); }
+.col-form, .col-info { position: relative; display: flex; }
+.col-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
+.col-game { display: flex; position: relative; }
+.col-editor { position: relative; overflow: auto; }
+/* Khung game / tab ẩn nhưng vẫn chạy (iframe display:none thì game dừng: không xem nền, không chụp ảnh được) */
+.col-game.off, .tab.off { position: absolute; inset: 0; visibility: hidden; pointer-events: none; z-index: -1; }
+/* Mép cột kéo được (layout.mjs wireGrips) */
+.grip { position: absolute; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 4; touch-action: none; }
+.grip[data-edge="right"] { right: -11px; }
+.grip[data-edge="left"] { left: -11px; }
+.grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; border-radius: 1px; background: transparent; }
+.grip:hover::after, body.resizing .grip::after { background: var(--lc-accent); }
+.sidebar > .grip { right: -5px; }
+.detail-grip { right: var(--lc-detail-w); margin-right: -5px; left: auto; }
+.detail[hidden] + .detail-grip { display: none; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe { pointer-events: none; }
+.layout-form { display: grid; gap: 10px; }
+.layout-form fieldset { display: grid; gap: 4px; }
+.layout-form legend { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
 .card.flash { outline: 2px solid var(--lc-accent); }
 #game-info { display: contents; }
 .card { background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 10px; padding: 10px 12px; }
@@ -197,7 +215,7 @@ body.focus .sidebar { display: none; }
 .history .changes { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
 
 /* ───── Thư viện: lưới thẻ ảnh | cột chi tiết ───── */
-.lib, .ord { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 0; }
+.lib, .ord { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 0; position: relative; }
 .lib-main, .ord-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .cards { --card: 180px; list-style: none; margin: 0; padding: 12px; flex: 1; overflow: auto; display: grid; gap: 10px; align-content: start;
   grid-template-columns: repeat(auto-fill, minmax(var(--card), 1fr)); }
@@ -218,7 +236,7 @@ body.focus .sidebar { display: none; }
 .thumb.sm { width: 34px; height: 34px; aspect-ratio: auto; border-radius: 5px; }
 .thumb.sm .ph { font-size: 11px; }
 .thumb.big { max-height: 42vh; }
-.detail { width: 320px; border-left: 1px solid var(--lc-border); background: var(--lc-surface); padding: 12px; overflow: auto;
+.detail { width: var(--lc-detail-w, 320px); border-left: 1px solid var(--lc-border); background: var(--lc-surface); padding: 12px; overflow: auto;
   display: flex; flex-direction: column; gap: 10px; }
 .d-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .d-head h3 { margin: 0; font-size: 17px; }
@@ -370,23 +388,17 @@ table.events code { white-space: pre-wrap; word-break: break-all; }
   .palette-btn kbd { display: none; }
   .pack-ctl select { max-width: 170px; }
 }
-/* Laptop (≤1500px): cột thông tin của game nằm dưới thông số (trái), khung game giữ cả chiều cao bên phải */
-@media (min-width: 901px) and (max-width: 1500px) {
-  .overview.with-info { grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
-  .with-info .col-form { grid-column: 1; grid-row: 1; }
-  .with-info .col-info { grid-column: 1; grid-row: 2; }
-  .with-info .col-game { grid-column: 2; grid-row: 1 / 3; }
-}
 @media (max-width: 1150px) {
   .ctxbar { flex-wrap: wrap; }
   .ctx { flex-wrap: wrap; }
-  .detail { width: 270px; }
 }
 @media (max-width: 900px) {
   .brand { display: none; }
   .layout { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--lc-border); }
-  .overview { grid-template-columns: 1fr; height: auto; }
+  .overview { grid-template-columns: 1fr !important; height: auto; }
+  .grip { display: none; }
+  .col-scroll { overflow: visible; }
   #panel-body > #tab-overview { overflow: auto; }
   .game-dock { height: 75vh; }
   .lib, .ord { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }

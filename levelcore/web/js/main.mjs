@@ -18,6 +18,7 @@ import { mountWhatsNew, openWhatsNew } from './whatsnew.mjs';
 import { mountActivity } from './activity.mjs';
 import { openAdmin } from './adminui.mjs';
 import { actionFor, bridgeMouseButtons, configureKeymap, openShortcuts, shortLabel } from './keymap.mjs';
+import { configureLayout, layout, onLayout, openLayout, setLayout, wireGrips } from './layout.mjs';
 import { checkState, mountLibrary } from './library.mjs';
 import { mountOverview } from './overview.mjs';
 import { openPalette } from './palette.mjs';
@@ -30,7 +31,6 @@ import game from '../game/game.mjs';
 setStoragePrefix(game.storagePrefix);
 const PACK_KEY = `${game.storagePrefix}.pack`;
 const VIEW_KEY = `${game.storagePrefix}.view`;
-const FOCUS_KEY = `${game.storagePrefix}.focus`;
 const NOTICE_KEY = `${game.storagePrefix}.noticeSeen`;
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const store = (key, v) => { try { localStorage.setItem(key, v); } catch { /* trình duyệt chặn lưu trữ */ } };
@@ -75,11 +75,11 @@ function showNotice(n) {
   };
 }
 
+/** Chế độ tập trung = ẩn danh sách level (một mục của Bố cục). */
 function setFocus(on) {
-  document.body.classList.toggle('focus', on);
-  $('#btn-focus').classList.toggle('active', on);
-  store(FOCUS_KEY, on ? '1' : '0');
+  setLayout({ list: !on });
 }
+const focused = () => !layout().list;
 const packInfo = () => state.packs.find(p => p.name === state.pack);
 const packReadOnly = () => { const p = packInfo(); return !p || p.archived || p.production; };
 
@@ -92,7 +92,7 @@ const shell = {
   playLevel: async name => {
     setView('level');
     await openLevel(String(name));
-    if (state.sel === String(name)) await showInGame('play');
+    if (state.sel === String(name)) await play();
   },
   shareLevel: async name => {
     if (String(name) === state.sel) return share();
@@ -112,7 +112,10 @@ const shell = {
 const views = {};
 function viewOf(name) {
   const mount = { library: mountLibrary, order: mountOrder, overview: mountOverview, activity: mountActivity }[name];
-  views[name] ||= mount(shell, $(`#view-${name}`), $(`#${name}-tools`));
+  if (!views[name]) {
+    views[name] = mount(shell, $(`#view-${name}`), $(`#${name}-tools`));
+    wireGrips($(`#view-${name}`));
+  }
   return views[name];
 }
 
@@ -245,7 +248,18 @@ async function boot() {
   $('#btn-admin').hidden = !(features().admin && state.me.admin);
   $('#btn-share').hidden = !(features().share && features().webgame);
   showNotice(state.me.notice);
-  setFocus(stored(FOCUS_KEY) === '1');
+  // Bố cục mặc định của game (ui.mjs / manifest `layout`); máy đã bật chế độ tập trung ở bản trước thì giữ.
+  configureLayout({ storagePrefix: game.storagePrefix, gameDefaults: game.layout || {} });
+  if (stored(`${game.storagePrefix}.focus`) === '1') {
+    setFocus(true);
+    try { localStorage.removeItem(`${game.storagePrefix}.focus`); } catch { /* bỏ qua */ }
+  }
+  onLayout(p => {
+    $('#btn-focus').classList.toggle('active', !p.list);
+    if (state.draft) layOverview();
+  });
+  $('#btn-focus').classList.toggle('active', focused());
+  if (game.renderEditor) $('.level-head [data-tab="overview"]').textContent = 'Editor';
   renderOnline();
   renderHints();
   if (features().webgame) mountDock($('#game-dock'), { ...game.webgame, record: features().plays === true, manageBuilds: can('gameBuilds') });
@@ -485,6 +499,7 @@ function showHead(on) {
 }
 
 function closeLevel() {
+  closeEditor();
   state.sel = state.cur = state.draft = null;
   $('#panel-body').hidden = true;
   $('#panel-empty').hidden = false;
@@ -582,7 +597,73 @@ function renderPanel() {
   if (state.tab === 'json') $('#json-text').value = JSON.stringify(state.draft, null, 2);
 }
 
-function renderOverview() {
+// ───── editor riêng của game (ui.mjs renderEditor): dựng một lần cho mỗi level, bản nháp đổi từ chỗ khác thì update ─────
+let editor = null;   // {key, handle}
+
+function closeEditor() {
+  try { editor?.handle?.destroy?.(); } catch { /* editor của game lỗi khi gỡ: bỏ qua */ }
+  editor = null;
+  $('#editor-host').replaceChildren();
+}
+
+function syncEditor() {
+  if (!game.renderEditor || !state.draft) return;
+  const key = `${state.pack}/${state.sel}`;
+  if (editor?.key === key && editor.handle?.update) {
+    editor.handle.update(state.draft, { editable: editable() });
+    return;
+  }
+  closeEditor();
+  const ctx = {
+    el: $('#editor-host'), level: state.draft, editable: editable(), pack: state.pack, name: state.sel, toast,
+    changed: () => { markDirty(); renderOverview({ fromEditor: true }); },
+    setHighlight: id => { state.highlight = state.highlight === id ? null : id; drawPreview(); },
+  };
+  try {
+    editor = { key, handle: game.renderEditor(ctx) || {} };
+  } catch (e) {
+    editor = { key, handle: {} };
+    $('#editor-host').innerHTML = `<p class="err small">Editor của game lỗi: ${esc(e.message)}</p>`;
+  }
+}
+
+/**
+ * Xếp các cột của tab Tổng quan theo bố cục của người dùng (layout.mjs). Cột ẩn của khung game dùng class off (vẫn chạy,
+ * để xem / chụp ảnh nền), các cột khác hidden. Tab Chơi thử (game có editor, khung game để ở tab) = chỉ khung game.
+ */
+function layOverview() {
+  const p = layout(), ov = $('.overview');
+  const hasEditor = !!game.renderEditor, playTab = hasEditor && p.game === 'tab', playing = playTab && state.tab === 'play';
+  const hasInfo = $('#game-info').childElementCount > 0;
+  const show = {
+    form: p.form !== 'hide' && !playing, info: p.info && hasInfo && !playing,
+    editor: hasEditor && !playing, game: !hasEditor || playing || p.game === 'right',
+  };
+  $('.level-head [data-tab="play"]').hidden = !playTab;
+  const cols = [];
+  const put = (sel, width, edge) => {
+    const el = $(sel);
+    el.style.order = cols.length;
+    cols.push(width);
+    const grip = $('.grip', el);
+    if (grip) {
+      grip.hidden = !edge;
+      if (edge) grip.dataset.edge = edge;
+    }
+  };
+  if (show.form && p.form === 'left') put('.col-form', 'var(--lc-form-w)', 'right');
+  if (show.editor) put('#editor-host', 'minmax(0, 1fr)');
+  if (show.game) put('.col-game', show.editor ? 'var(--lc-game-w)' : 'minmax(0, 1fr)', show.editor ? 'left' : '');
+  if (show.info) put('.col-info', 'var(--lc-info-w)', 'left');
+  if (show.form && p.form === 'right') put('.col-form', 'var(--lc-form-w)', 'left');
+  ov.style.gridTemplateColumns = cols.join(' ');
+  $('.col-form').hidden = !show.form;
+  $('.col-info').hidden = !show.info;
+  $('#editor-host').hidden = !show.editor;
+  $('.col-game').classList.toggle('off', !show.game);
+}
+
+function renderOverview({ fromEditor = false } = {}) {
   const col = $('#game-form');
   col.innerHTML = '<div id="lc-fields"></div><div id="lc-game-form"></div>';
   if (game.fields?.length) {   // form thuộc tính của core: chỉ ghi đúng field vừa sửa
@@ -595,9 +676,10 @@ function renderOverview() {
       setHighlight: id => { state.highlight = state.highlight === id ? null : id; renderOverview(); },   // bấm lại = tắt
       changed: () => { markDirty(); renderOverview(); },
     });
-  } else if (!game.fields?.length) {
+  } else if (!game.fields?.length && !game.renderEditor) {
     $('#lc-game-form', col).innerHTML = '<section class="card"><p class="muted small">Game chưa khai field nào — sửa ở tab JSON.</p></section>';
   }
+  if (!fromEditor) syncEditor();
   const v = game.validateLevel(state.draft, { levelNo: Number(state.sel) });
   $('#validation').innerHTML = v.errors.map(x => `<div class="err">${esc(x)}</div>`).join('')
     + v.warnings.map(x => `<div class="warn">${esc(x)}</div>`).join('')
@@ -606,9 +688,7 @@ function renderOverview() {
   chip.textContent = !v.isValid ? `✗ ${v.errors.length} lỗi` : v.warnings.length ? `! ${v.warnings.length} cảnh báo` : '✓ Hợp lệ';
   chip.className = `chip ${!v.isValid ? 'err' : v.warnings.length ? 'warn' : 'ok'}`;
   chip.title = [...v.errors, ...v.warnings].join('\n') || 'Level qua kiểm định';
-  const hasInfo = $('#game-info').childElementCount > 0;
-  $('.col-info').hidden = !hasInfo;
-  $('.overview').classList.toggle('with-info', hasInfo);
+  layOverview();
   drawPreview();
 }
 
@@ -810,6 +890,16 @@ async function relevel() {
 
 /** ▶ Chơi thử: gửi cả bộ vào game thật (WebGL), level đang mở thay bằng bản nháp (chưa lưu cũng được) rồi mở level đó. */
 /** Khung game ở cột preview: mode 'preview' = xem level đứng yên (mở level là tự xem), 'play' = ▶ Chơi thử. */
+/** ▶ Chơi thử: game có editor riêng và khung game để ở tab thì sang tab Chơi thử trước. */
+async function play() {
+  if (game.renderEditor && layout().game === 'tab') setTab('play');
+  await showInGame('play');
+}
+
+function layoutDialog() {
+  return openLayout({ hasEditor: !!game.renderEditor });
+}
+
 async function showInGame(mode = 'preview') {
   if (!state.sel || !state.draft || !features().webgame) return;
   if (mode === 'play') {
@@ -924,14 +1014,17 @@ async function renderHistory() {
 function setTab(tab) {
   state.tab = tab;
   for (const b of $$('.tabs button')) b.classList.toggle('active', b.dataset.tab === tab);
-  for (const id of ['overview', 'json', 'history']) $(`#tab-${id}`).hidden = id !== tab;
+  // Tab Tổng quan chứa khung game: tab khác chỉ che (class off), không display:none, để game vẫn chạy.
+  $('#tab-overview').classList.toggle('off', tab !== 'overview' && tab !== 'play');
+  for (const id of ['json', 'history']) $(`#tab-${id}`).hidden = id !== tab;
+  if (state.draft) layOverview();
   if (tab === 'json' && state.draft) {
     $('#json-text').value = JSON.stringify(state.draft, null, 2);
     $('#json-text').readOnly = !editable();
     $('#json-msg').textContent = editable() ? '' : 'Chỉ xem — bấm ✎ Sửa để sửa JSON.';
   }
   if (tab === 'history' && state.sel) renderHistory();
-  if (tab === 'overview' && state.draft) drawPreview();
+  if ((tab === 'overview' || tab === 'play') && state.draft) drawPreview();
 }
 
 // ───────────────────────────── bộ: thao tác ─────────────────────────────
@@ -1172,7 +1265,8 @@ function palette() {
       cmd('Lệnh', 'Phím tắt…', () => showShortcuts(), { key: 'global.shortcuts', words: 'keymap' }),
       cmd('Lệnh', 'Có gì mới…', () => openWhatsNew(), { words: 'release changelog' }),
       cmd('Lệnh', 'Đổi giao diện sáng / tối', () => $('#btn-theme').click(), { key: 'global.theme', words: 'theme dark light' }),
-      cmd('Lệnh', 'Chế độ tập trung (ẩn danh sách level)', () => setFocus(!document.body.classList.contains('focus')), { key: 'global.focus', words: 'focus' }),
+      cmd('Lệnh', 'Bố cục màn Level…', () => layoutDialog(), { words: 'layout cot an hien do rong' }),
+      cmd('Lệnh', 'Chế độ tập trung (ẩn danh sách level)', () => setFocus(!focused()), { key: 'global.focus', words: 'focus' }),
     ],
   });
 }
@@ -1193,10 +1287,10 @@ const ACTIONS_RUN = {
   'global.activity': () => setView('activity'),
   'global.theme': () => $('#btn-theme').click(),
   'global.shortcuts': () => showShortcuts(),
-  'global.focus': () => { setView('level'); setFocus(!document.body.classList.contains('focus')); },
+  'global.focus': () => { setView('level'); setFocus(!focused()); },
   'level.save': () => save(),
   'level.edit': () => (state.editing ? stopEdit() : startEdit()),
-  'level.play': () => features().webgame && showInGame('play'),
+  'level.play': () => features().webgame && play(),
   'level.share': () => features().share && share(),
   'level.prev': () => stepLevel(-1),
   'level.next': () => stepLevel(1),
@@ -1318,7 +1412,7 @@ function wire() {
   }
   document.addEventListener('click', e => { for (const m of $$('.more-menu')) if (!m.contains(e.target)) m.removeAttribute('open'); });
   $('#btn-whatsnew').addEventListener('click', () => openWhatsNew());
-  $('#btn-focus').addEventListener('click', () => setFocus(!document.body.classList.contains('focus')));
+  $('#btn-focus').addEventListener('click', () => setFocus(!focused()));
   $('#lv-valid').addEventListener('click', () => {
     setTab('overview');
     const card = $('#valid-card');
@@ -1326,7 +1420,10 @@ function wire() {
     card.classList.add('flash');
     setTimeout(() => card.classList.remove('flash'), 1200);
   });
-  $('#btn-play').addEventListener('click', () => showInGame('play').catch(e => toast(e.message, 'err')));
+  $('#btn-play').addEventListener('click', () => play().catch(e => toast(e.message, 'err')));
+  $('#btn-layout').addEventListener('click', () => layoutDialog());
+  $('#btn-layout-menu').addEventListener('click', () => { setView('level'); layoutDialog(); });
+  wireGrips($('#view-level'));
   $('#btn-download').addEventListener('click', () =>
     downloadBlob(new Blob([JSON.stringify(state.draft, null, 2) + '\n'], { type: 'application/json' }), `${state.sel}.json`));
   $('#btn-json-apply').addEventListener('click', applyJson);
