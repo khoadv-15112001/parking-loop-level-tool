@@ -38,8 +38,8 @@ Fork / đóng góp ngược về core: [FORK.md](FORK.md). Game mới: `node lev
 | Playtest | bản WebGL của game ở `/game/` (upload theo phần, `.br`, cache), khung game trong app (xem / chơi thử / làm nổi / cheat) |
 | CI | hợp đồng CI v1 của Jenkins: nhận player WebGL và level, build nhánh theo dõi lên ngay, nhánh khác chờ admin chọn |
 | Deploy | `deploy/Dockerfile` (Python), `deploy/Dockerfile.node` (Node) cho BI Center (SBP_*), `deploy/docker-compose.yml` |
-| Vỏ app web | chọn bộ, danh sách / lưới ảnh, panel level (Tổng quan / JSON / Lịch sử), sửa / lưu / xung đột, Có gì mới, phím tắt đổi được |
-| Tổng quan bộ | số level theo nhóm, đường chỉ số theo số level, cảnh báo nhảy vọt / chuỗi dài, so 3 bộ (chạy trên web, cả hai server) |
+| Vỏ app web | bố cục như Sand Jam / AntLevel: các màn Level (danh sách → level: Tổng quan / JSON / Lịch sử), Thư viện (lưới ảnh, lọc, chọn nhiều), Thứ tự, Tổng quan bộ, Hoạt động; tìm nhanh Ctrl+K; thanh trạng thái (kết nối, bản game, người online); sửa / lưu / xung đột, Có gì mới, phím tắt đổi được |
+| Tổng quan bộ | số level theo nhóm, đường chỉ số theo số level, cảnh báo nhảy vọt / chuỗi dài, so 3 bộ, kiểm định cả bộ (chạy trên web, cả hai server) |
 | Chỉ server Node | link chơi trên điện thoại + QR, lưu mọi lượt chơi (xuất JSONL cho solver / AI), ảnh level, xếp thứ tự theo slot, thùng rác 30 ngày, quản trị trong app (admin, quyền theo việc, thông báo, dung lượng, sao lưu) — [`contracts/README.md`](contracts/README.md) |
 
 ## Hai cách khai game, hai server

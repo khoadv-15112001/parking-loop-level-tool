@@ -1,5 +1,6 @@
 // Vỏ app web của level-tool-core (chung mọi game; phần riêng của game ở ../game/game.mjs — xem levelcore/README.md).
-// Bố cục như FishLevel: chọn bộ → danh sách level → panel level (Tổng quan / JSON / Lịch sử), khoá khi sửa, lưu theo If-Match (412 → so sánh),
+// Bố cục như Sand Jam / AntLevel: các màn Level (danh sách → level đang mở: Tổng quan / JSON / Lịch sử), Thư viện (lưới
+// ảnh), Thứ tự, Tổng quan bộ, Hoạt động; bộ đang mở chung cho mọi màn. Khoá khi sửa, lưu theo If-Match (412 → so sánh),
 // realtime qua SSE, nhập / xuất zip, kiểm định cả bộ, promote sang bộ production, xuất Level Hub.
 import { api, ApiError, devUser, downloadBlob, downloadResponse, session, setStoragePrefix } from './api.mjs';
 import { biSessionLogin } from './biauth.mjs';
@@ -9,27 +10,32 @@ import {
 import { diffPaths, renderFields } from './fields.mjs';
 import { parseLevelQuery, queryMatches } from './query.mjs';
 import { $, $$, confirmDialog, esc, fmtTime, openDialog, shortUser, toast } from './ui.mjs';
-import { canCapture, highlight as gameHighlight, isPreviewing, mountDock, onBuildEvent, refreshPreview, showLevel } from './webgame.mjs';
+import {
+  currentBuild, highlight as gameHighlight, isPreviewing, isShowing, mountDock, onBuildEvent, openBuilds, refreshPreview, showLevel,
+} from './webgame.mjs';
 import * as sync from './sync.mjs';
 import { mountWhatsNew, openWhatsNew } from './whatsnew.mjs';
+import { mountActivity } from './activity.mjs';
 import { openAdmin } from './adminui.mjs';
-import { captureMissing, invalidate as invalidateThumbs, renderGrid } from './gallery.mjs';
-import { actionFor, bridgeMouseButtons, configureKeymap, openShortcuts } from './keymap.mjs';
-import { openOverview } from './overview.mjs';
+import { actionFor, bridgeMouseButtons, configureKeymap, openShortcuts, shortLabel } from './keymap.mjs';
+import { checkState, mountLibrary } from './library.mjs';
+import { mountOverview } from './overview.mjs';
+import { openPalette } from './palette.mjs';
 import { renderPlays } from './playsview.mjs';
-import { openReorder } from './reorder.mjs';
+import { mountOrder } from './reorder.mjs';
 import { openShare } from './share.mjs';
 import { openTrash } from './trash.mjs';
 import game from '../game/game.mjs';
 
 setStoragePrefix(game.storagePrefix);
 const PACK_KEY = `${game.storagePrefix}.pack`;
-const GRID_KEY = `${game.storagePrefix}.grid`;
+const VIEW_KEY = `${game.storagePrefix}.view`;
 const FOCUS_KEY = `${game.storagePrefix}.focus`;
 const NOTICE_KEY = `${game.storagePrefix}.noticeSeen`;
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const store = (key, v) => { try { localStorage.setItem(key, v); } catch { /* trình duyệt chặn lưu trữ */ } };
 const THEME_KEY = `${game.storagePrefix}.theme`;
+const VIEWS = ['level', 'library', 'order', 'overview', 'activity'];
 
 const state = {
   me: null,
@@ -37,7 +43,10 @@ const state = {
   pack: null,
   levels: [],
   deleted: [],
-  invalid: new Map(),   // name -> errors (sau "Kiểm định bộ")
+  invalid: new Map(),   // name -> lỗi, sau lần kiểm định cả bộ gần nhất (state.checked)
+  warned: new Map(),    // name -> cảnh báo
+  checked: null,        // {pack, at}: bộ đã kiểm định lúc nào
+  view: 'level',
   sel: null,            // tên level đang mở
   cur: null,            // bản trên server {rev, level, author, ...}
   draft: null,          // bản đang sửa
@@ -53,8 +62,6 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const features = () => ({ levelhub: true, bi: true, webgame: true, ...(state.me?.features || {}) });
 /** Quyền theo việc (server Node); server cũ chỉ có cờ admin. */
 const can = action => state.me?.rights?.[action] ?? !!state.me?.admin;
-// Lưới ảnh hay danh sách: người dùng chọn thì nhớ, chưa chọn thì theo game (manifest listView: 'grid' cho game nhìn hình là nhận ra).
-let gridMode = stored(GRID_KEY) != null ? stored(GRID_KEY) === '1' : game.listView === 'grid';
 
 /** Dải thông báo chung của Quản trị; người đã bấm × thì không hiện lại cùng nội dung. */
 function showNotice(n) {
@@ -75,6 +82,126 @@ function setFocus(on) {
 }
 const packInfo = () => state.packs.find(p => p.name === state.pack);
 const packReadOnly = () => { const p = packInfo(); return !p || p.archived || p.production; };
+
+// ───────────────────────────── màn ─────────────────────────────
+
+/** Những gì các màn (library / reorder / overview / activity .mjs) dùng của vỏ. */
+const shell = {
+  state, game, features, can, packInfo, packReadOnly, stored, store,
+  openLevel: async (name, opts) => { setView('level'); await openLevel(String(name), opts); },
+  playLevel: async name => {
+    setView('level');
+    await openLevel(String(name));
+    if (state.sel === String(name)) await showInGame('play');
+  },
+  shareLevel: async name => {
+    if (String(name) === state.sel) return share();
+    const d = await api.level(state.pack, String(name));
+    return openShare({ pack: state.pack, name: String(name), rev: d.rev, draft: d.level, dirty: false });
+  },
+  checkPack: () => checkPack(),
+  promote: names => promote(names),
+  deleteLevels: names => deleteLevels(names),
+  levelHub: () => levelHub(),
+  afterReorder: async () => {
+    await loadLevels();
+    if (state.sel) await openLevel(state.sel, { force: true });
+  },
+};
+
+const views = {};
+function viewOf(name) {
+  const mount = { library: mountLibrary, order: mountOrder, overview: mountOverview, activity: mountActivity }[name];
+  views[name] ||= mount(shell, $(`#view-${name}`), $(`#${name}-tools`));
+  return views[name];
+}
+
+function renderView(show = false) {   // mở màn / đổi bộ / danh sách level tải lại: vẽ lại màn đang mở (trừ màn Level)
+  if (state.view === 'level' || !state.pack) return;
+  Promise.resolve(viewOf(state.view).render({ show })).catch(e => toast(e.message, 'err'));
+}
+
+/** Màn Level không bị ẩn hẳn khi sang màn khác: khung game trong đó vẫn chạy (chụp ảnh ở Thư viện, giữ game đã tải). */
+function setView(name) {
+  if (!VIEWS.includes(name)) name = 'level';
+  const prev = state.view;
+  state.view = name;
+  store(VIEW_KEY, name);
+  for (const b of $$('.views-nav button')) b.classList.toggle('active', b.dataset.view === name);
+  for (const el of $$('.ctxbar .ctx')) el.hidden = el.dataset.view !== name;
+  for (const v of VIEWS) if (v !== 'level') $(`#view-${v}`).hidden = v !== name;
+  $('#view-level').classList.toggle('away', name !== 'level');
+  $('#view-level').inert = name !== 'level';
+  if (name !== 'level') renderView(true);
+  else if (prev !== 'level' && state.sel && state.draft && !isShowing(state.pack, state.sel)) showInGame('preview').catch(() => {});
+}
+
+/** Kiểm định cả bộ trên server: chấm trạng thái ở danh sách, Thư viện, Tổng quan bộ. Đang chạy cho bộ này thì chờ lần đó. */
+let checking = null;
+function checkPack() {
+  const pack = state.pack;
+  if (checking?.pack === pack) return checking.run;
+  const run = api.validatePack(pack).then(res => {
+    if (pack !== state.pack) return null;
+    state.invalid = new Map(res.filter(r => !r.isValid).map(r => [r.name, r.errors]));
+    state.warned = new Map(res.filter(r => r.warnings?.length).map(r => [r.name, r.warnings]));
+    state.checked = { pack, at: Date.now() };
+    renderList();
+    renderView();
+    return res;
+  }).finally(() => { if (checking?.run === run) checking = null; });
+  checking = { pack, run };
+  return run;
+}
+
+/** Kết quả kiểm định một level vừa biết trên trình duyệt (mở / lưu) thay cho kết quả cũ của lần kiểm định cả bộ. */
+function noteCheck(name, v) {
+  if (state.checked?.pack !== state.pack) return;
+  if (v.isValid) state.invalid.delete(name); else state.invalid.set(name, v.errors);
+  if (v.warnings?.length) state.warned.set(name, v.warnings); else state.warned.delete(name);
+}
+
+// ───────────────────────────── thanh trạng thái, gợi ý phím ─────────────────────────────
+
+function renderCounts() {
+  const live = state.packs.filter(p => !p.archived);
+  $('#st-count').textContent = `${live.reduce((n, p) => n + (p.level_count || 0), 0)} level · ${live.length} bộ`;
+}
+
+async function renderGameStatus() {
+  const el = $('#st-game');
+  if (!features().webgame) return;
+  const b = await currentBuild().catch(() => null);
+  const when = b?.uploaded_at ? new Date(b.uploaded_at).toLocaleString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '';
+  el.hidden = false;
+  el.textContent = b ? `▶ Bản game ${b.version || b.file || b.id || ''}${b.branch ? ` · ${b.branch}` : ''}${b.buildNumber ? ` #${b.buildNumber}` : ''}${when ? ` · ${when}` : ''}`
+    : '▶ Chưa có bản game';
+  el.title = can('gameBuilds') ? 'Bản game WebGL dùng để xem / chơi thử — bấm để chọn bản khác, tải bản mới' : 'Bản game WebGL dùng để xem / chơi thử';
+  el.disabled = !can('gameBuilds');
+}
+
+const hue = s => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+const avatar = email => `<span class="avatar" style="--h:${hue(email)}" title="${esc(email)}">${esc(shortUser(email).slice(0, 2).toUpperCase())}</span>`;
+
+function renderOnline(list = []) {
+  const others = list.filter(e => e !== state.me?.email);
+  $('#online').innerHTML = others.length ? `${others.slice(0, 6).map(avatar).join('')} ${others.length} người khác online` : 'chỉ mình bạn';
+  $('#online').title = others.join('\n');
+}
+
+/** Dòng gợi ý phím ở đáy màn Level, theo việc đang làm; phím lấy từ bảng phím tắt (người dùng đổi thì đổi theo). */
+function renderHints() {
+  const own = (game.shortcuts || []).filter(a => a.hint !== false && a.scope !== 'global').map(a => [a.id, a.label]);
+  const items = state.editing
+    ? [['level.save', 'lưu'], ['level.edit', 'xong'], ['level.play', 'chơi bản nháp'], ...own]
+    : state.sel
+      ? [['level.edit', 'sửa'], ['level.play', 'chơi thử'], ['level.share', 'link điện thoại'], ['level.prev', 'level trước'],
+        ['level.next', 'level sau'], ['global.search', 'tìm'], ['global.focus', 'tập trung'], ['global.palette', 'tìm nhanh']]
+      : [['global.search', 'tìm level'], ['global.newLevel', 'level mới'], ['global.palette', 'tìm nhanh'], ['global.library', 'Thư viện']];
+  $('#hintbar').innerHTML = items.filter(([id]) => shortLabel(id)).slice(0, 10)
+    .map(([id, label]) => `<span><kbd>${esc(shortLabel(id))}</kbd> ${esc(label)}</span>`).join('')
+    + '<span class="grow"></span><button data-keys class="link">⌨ Phím tắt</button>';
+}
 
 // ───────────────────────────── khởi động / đăng nhập ─────────────────────────────
 
@@ -98,11 +225,11 @@ async function boot() {
   }
   $('#login').hidden = true;
   $('#app').hidden = false;
-  $('#me').textContent = shortUser(state.me.email);
+  $('#me').innerHTML = `${avatar(state.me.email)} ${esc(shortUser(state.me.email))}`;
   api.authStatus().then(st => {   // phiên bản trên BI = tag phát hành (<slug>-v0.1.0 → v0.1.0); local = dev
     const v = String(st.version || '');
-    $('#app-version').textContent = game.versionPrefix && v.startsWith(game.versionPrefix) ? v.slice(game.versionPrefix.length) : v;
-    return mountWhatsNew($('#app-version'), $('#app-version').textContent, `${game.storagePrefix}.seenVersion`);
+    $('#app-version').textContent = `${game.toolName} ${game.versionPrefix && v.startsWith(game.versionPrefix) ? v.slice(game.versionPrefix.length) : v}`;
+    return mountWhatsNew($('#app-version'), v.slice(game.versionPrefix?.length || 0), `${game.storagePrefix}.seenVersion`);
   }).catch(() => {});
   try {
     state.bi = await api.biConfig();
@@ -110,24 +237,28 @@ async function boot() {
     state.bi = { configured: false };
   }
   $('#btn-levelhub-bi').hidden = !features().levelhub;
-  $('#btn-levelhub').hidden = !features().levelhub;
   if (!state.bi.configured) $('#btn-levelhub-bi').title = 'Chưa kết nối BI Level Hub — bấm để xem cách cấu hình';
   wire();
   configureKeymap({ storagePrefix: game.storagePrefix, scopes: game.shortcutScopes || [], actions: game.shortcuts || [] });
   bridgeMouseButtons();
-  $('#btn-reorder').hidden = !features().reorder;
   $('#btn-trash').hidden = !features().trash;
   $('#btn-admin').hidden = !(features().admin && state.me.admin);
   $('#btn-share').hidden = !(features().share && features().webgame);
   showNotice(state.me.notice);
   setFocus(stored(FOCUS_KEY) === '1');
+  renderOnline();
+  renderHints();
   if (features().webgame) mountDock($('#game-dock'), { ...game.webgame, record: features().plays === true, manageBuilds: can('gameBuilds') });
   else {
     $('#game-dock').innerHTML = '<p class="muted small dock-off">Server này chưa có chơi thử bằng bản WebGL của game.</p>';
     $('#btn-play').hidden = true;
   }
+  renderGameStatus();
   sync.startEvents();
+  // Màn mở đầu: màn lần trước; lần đầu thì Level, hoặc Thư viện với game nhìn hình là nhận ra level (manifest listView: 'grid').
+  state.view = VIEWS.includes(stored(VIEW_KEY)) ? stored(VIEW_KEY) : game.listView === 'grid' ? 'library' : 'level';
   await loadPacks(localStorage.getItem(PACK_KEY));
+  setView(state.view);
 }
 
 async function showLogin(err) {
@@ -178,6 +309,7 @@ function applyTheme(t) {
 
 async function loadPacks(prefer) {
   state.packs = await api.packs();
+  renderCounts();
   const visible = renderPackSelect(prefer);
   const name = visible.some(p => p.name === prefer) ? prefer : visible.find(p => !hubIdOf(p))?.name || visible[0]?.name;
   if (name) {
@@ -245,7 +377,9 @@ async function selectPack(name) {
     return;
   }
   state.pack = name;
-  state.invalid.clear();
+  state.checked = null;
+  state.invalid = new Map();
+  state.warned = new Map();
   localStorage.setItem(PACK_KEY, name);
   closeLevel();
   await loadLevels();
@@ -254,6 +388,7 @@ async function selectPack(name) {
   $('#btn-import').disabled = packReadOnly();
   $('#btn-hub-sync').hidden = !hubIdOf(p) || !state.bi?.configured;
   if (p?.production) toast(`Bộ ${name} là production: chỉ nhận level promote từ bộ khác.`);
+  checkPack().catch(() => {});   // chạy nền: chấm trạng thái ở danh sách, Thư viện, Tổng quan bộ
 }
 
 async function loadLevels() {
@@ -266,7 +401,9 @@ async function loadLevels() {
     p.level_count = state.levels.length;
     const opt = [...$('#pack-select').options].find(o => o.value === p.name);
     if (opt) opt.textContent = opt.textContent.replace(/ — \d+$/, ` — ${p.level_count}`);
+    renderCounts();
   }
+  renderView();
 }
 
 async function restoreDeleted(name) {
@@ -308,28 +445,20 @@ function renderList() {
     if (mode && mode !== 'invalid' && !game.matchFilter?.(s, mode)) return false;
     return query.empty || queryMatches(query, lv.level, `${game.searchText?.(s) || ''} ${lv.author || ''}`);
   });
-  $('#list-stats').textContent = `${items.length} / ${state.levels.length} level`
-    + (state.invalid.size ? ` · ${state.invalid.size} lỗi kiểm định` : '');
-  $('#level-list').classList.toggle('grid', gridMode);
-  $('#btn-grid').classList.toggle('active', gridMode);
-  $('#btn-capture').hidden = !(gridMode && features().thumbs && canCapture());
-  if (gridMode) {
-    renderGrid($('#level-list'), state.pack, items, {
-      cls: lv => `${lv.name === state.sel ? 'sel' : ''} ${state.invalid.has(lv.name) ? 'invalid' : ''}`,
-      html: lv => `<span class="num">${esc(lv.name)}</span>${lv.lock ? ` <span class="badge warn">🔒</span>` : ''}${state.invalid.has(lv.name) ? ' <span class="badge err">lỗi</span>' : ''}`,
-    }, { thumbs: features().thumbs === true, thumbnail: game.thumbnail || null }).catch(e => toast(e.message, 'err'));
-    return;
-  }
+  const checked = state.checked?.pack === state.pack;
+  $('#list-stats').textContent = `${items.length === state.levels.length ? '' : `${items.length} / `}${state.levels.length} level`
+    + (checked && state.invalid.size ? ` · ${state.invalid.size} lỗi` : '') + (checked && state.warned.size ? ` · ${state.warned.size} cảnh báo` : '');
+  const DOT = { err: 'Có lỗi kiểm định', warn: 'Có cảnh báo', ok: 'Hợp lệ' };
   $('#level-list').innerHTML = items.map(lv => {
     const it = game.listItem?.(lv.summary || {}) || {};
     const lock = lv.lock ? `<span class="badge warn" title="Đang sửa">🔒 ${esc(shortUser(lv.lock.holder))}</span>` : '';
-    const bad = state.invalid.has(lv.name);
-    return `<li data-name="${esc(lv.name)}" class="${lv.name === state.sel ? 'sel' : ''} ${bad ? 'invalid' : ''}">
-      <span class="num">${esc(lv.name)}</span>
-      <span class="tags">${it.tags || ''}${bad ? '<span class="badge err">lỗi</span>' : ''}${lock}</span>
+    const st = checkState(state, lv.name);
+    return `<li data-name="${esc(lv.name)}" class="${lv.name === state.sel ? 'sel' : ''} ${st === 'err' ? 'invalid' : ''}">
+      <span class="num">${st ? `<span class="dot ${st}" title="${DOT[st]}"></span>` : ''}${esc(lv.name)}</span>
+      <span class="tags">${it.tags || ''}${lock}</span>
       <span class="sub muted small">${it.sub ? `${esc(it.sub)} · ` : ''}r${esc(lv.head_rev)} · ${esc(shortUser(lv.author))} · ${esc(fmtTime(lv.updated_at))}</span>
     </li>`;
-  }).join('') || '<li class="muted">Chưa có level — bấm Nhập để đưa level từ game vào.</li>';
+  }).join('') || '<li class="muted">Chưa có level — bấm ⇪ Nhập ở dưới để đưa level từ game vào.</li>';
 }
 
 // ───────────────────────────── level đang mở ─────────────────────────────
@@ -345,10 +474,22 @@ async function leaveLevel() {
   return true;
 }
 
+/** Hàng ngữ cảnh của màn Level: có level mở thì hiện tên, kiểm định, tab, thao tác; không thì một dòng hướng dẫn. */
+function showHead(on) {
+  $('#lv-none').hidden = on;
+  for (const sel of ['#btn-prev', '#lv-title', '#btn-next', '#lv-valid', '.level-head .tabs', '#lv-actions']) $(sel).hidden = !on;
+  if (!on) {
+    $('#lv-meta').textContent = '';
+    $('#lv-lock').hidden = $('#lv-dirty').hidden = true;
+  }
+}
+
 function closeLevel() {
   state.sel = state.cur = state.draft = null;
   $('#panel-body').hidden = true;
   $('#panel-empty').hidden = false;
+  showHead(false);
+  renderHints();
 }
 
 async function openLevel(name, { force = false } = {}) {
@@ -366,7 +507,9 @@ async function openLevel(name, { force = false } = {}) {
   state.highlight = null;
   $('#panel-empty').hidden = true;
   $('#panel-body').hidden = false;
+  showHead(true);
   renderList();
+  $(`#level-list li[data-name="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'nearest' });
   renderPanel();
   if (state.tab === 'history') renderHistory();
   showInGame('preview').catch(e => toast(e.message, 'err'));   // mở level là xem luôn bằng game thật
@@ -421,6 +564,9 @@ function renderPanel() {
   // Đang xem: chỉ Sửa / Chơi thử. Đang sửa: Lưu / Hoàn tác / Xong. Chip khoá chỉ hiện khi có người đang sửa.
   $('#lv-lock').textContent = state.editing ? '✎ Bạn đang sửa' : lock ? `🔒 ${shortUser(lock.holder)} đang sửa` : '';
   $('#lv-lock').hidden = !state.editing && !lock;
+  const at = state.levels.findIndex(l => l.name === state.sel);
+  $('#btn-prev').disabled = at <= 0;
+  $('#btn-next').disabled = at < 0 || at >= state.levels.length - 1;
   const ro = packReadOnly();
   $('#btn-edit').hidden = state.editing;
   $('#btn-edit').disabled = ro || !!lock;
@@ -432,6 +578,7 @@ function renderPanel() {
   $('#btn-relevel').disabled = packInfo()?.archived;
   markDirty();
   renderOverview();
+  renderHints();
   if (state.tab === 'json') $('#json-text').value = JSON.stringify(state.draft, null, 2);
 }
 
@@ -512,6 +659,7 @@ async function save() {
 function applySaved(res) {
   state.cur = { ...state.cur, rev: res.rev, level: clone(state.draft), author: res.author || state.me.email,
     created_at: new Date().toISOString(), message: '' };
+  noteCheck(state.sel, game.validateLevel(state.draft, { levelNo: Number(state.sel) }));
   toast(res.unchanged ? 'Không có gì thay đổi' : `Đã lưu r${res.rev}${res.changes?.length ? `: ${res.changes.slice(0, 3).join('; ')}` : ''}`, 'ok');
   renderPanel();
   scheduleReload();
@@ -592,6 +740,26 @@ async function newLevel() {
   }
 }
 
+/** Xoá nhiều level (Thư viện): xoá mềm từng level, level đang khoá hoặc vừa bị sửa thì bỏ qua và báo. */
+async function deleteLevels(names) {
+  if (!(await confirmDialog(`Xoá ${names.length} level?`, `Level ${names.slice(0, 12).join(', ')}${names.length > 12 ? '…' : ''}. Xoá mềm: `
+    + 'lịch sử vẫn giữ, khôi phục được ở bộ lọc "Đã xoá" của danh sách hoặc Thùng rác.', 'Xoá', true))) return false;
+  if (names.includes(state.sel) && !(await leaveLevel())) return false;
+  const failed = [];
+  for (const name of names) {
+    const lv = state.levels.find(l => l.name === name);
+    try {
+      await api.deleteLevel(state.pack, name, lv?.head_rev);
+    } catch (e) {
+      failed.push(`${name} (${e.message})`);
+    }
+  }
+  if (names.includes(state.sel)) closeLevel();
+  toast(failed.length ? `Không xoá được: ${failed.join('; ')}` : `Đã xoá ${names.length} level`, failed.length ? 'err' : 'ok');
+  await loadLevels();
+  return true;
+}
+
 async function deleteLevel() {
   if (!(await confirmDialog(`Xoá level ${state.sel}?`, 'Xoá mềm: lịch sử vẫn giữ, khôi phục được ở bộ lọc "Đã xoá" của danh sách.', 'Xoá', true))) return;
   try {
@@ -661,24 +829,27 @@ async function playRevision(rev) {
   await showLevel(state.pack, state.sel, r.level, 'play', `r${rev}`, rev);
 }
 
-async function promote() {
+/** Promote một level (số đích chọn được) hoặc nhiều level (giữ nguyên số) sang bộ khác. */
+async function promote(names = [state.sel]) {
   const targets = state.packs.filter(p => p.name !== state.pack && !p.archived);
   const def = targets.find(p => p.production)?.name || targets[0]?.name;
   if (!def) return toast('Chưa có bộ nào khác để promote sang');
-  const html = `<p class="muted small">Chép bản đã lưu (r${esc(state.cur.rev)}) sang bộ khác sau khi qua kiểm định. Bộ production chỉ nhận level theo đường này.</p>
+  const one = names.length === 1;
+  const html = `<p class="muted small">Chép bản đã lưu sang bộ khác sau khi qua kiểm định. Bộ production chỉ nhận level theo đường này.</p>
+    ${one ? '' : `<p>${esc(names.length)} level: ${esc(names.slice(0, 20).join(', '))}${names.length > 20 ? '…' : ''} — giữ nguyên số ở bộ đích.</p>`}
     <div class="grid2"><label>Sang bộ<select id="pm-to">${targets.map(p => `<option ${p.name === def ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
-    <label>Số level đích<input id="pm-num" type="number" min="1" value="${esc(state.sel)}"></label></div>
+    ${one ? `<label>Số level đích<input id="pm-num" type="number" min="1" value="${esc(names[0])}"></label>` : ''}</div>
     <label>Ghi chú<input id="pm-msg" placeholder="vd: giảm time 10%"></label><div id="pm-err" class="err small"></div>`;
   const res = await openDialog({
-    title: `Promote level ${state.sel}`, html, actions: [{ label: 'Huỷ', value: null }, {
+    title: one ? `Promote level ${names[0]}` : `Promote ${names.length} level`, html, actions: [{ label: 'Huỷ', value: null }, {
       label: 'Promote', primary: true, onClick: async dlg => {
-        if (state.dirty) throw new Error('Lưu thay đổi trước khi promote');
+        if (state.dirty && names.includes(state.sel)) throw new Error(`Lưu thay đổi của level ${state.sel} trước khi promote`);
         try {
           return await api.promote(state.pack, $('#pm-to', dlg).value,
-            [{ name: state.sel, to: $('#pm-num', dlg).value }], $('#pm-msg', dlg).value);
+            names.map(name => ({ name, to: one ? $('#pm-num', dlg).value : name })), $('#pm-msg', dlg).value);
         } catch (e) {
           if (e.status === 422 && e.body.validation) {
-            $('#pm-err', dlg).innerHTML = e.body.validation.map(v => v.errors.map(esc).join('<br>')).join('<br>');
+            $('#pm-err', dlg).innerHTML = e.body.validation.map(v => v.errors.map(x => `${v.name && !one ? `Level ${esc(v.name)}: ` : ''}${esc(x)}`).join('<br>')).join('<br>');
             return false;
           }
           throw e;
@@ -862,25 +1033,6 @@ async function importFile(file) {
   if (state.sel && !state.dirty) await openLevel(state.sel, { force: true });
 }
 
-async function validatePack() {
-  toast('Đang kiểm định cả bộ…');
-  const res = await api.validatePack(state.pack);
-  state.invalid = new Map(res.filter(r => !r.isValid).map(r => [r.name, r.errors]));
-  renderList();
-  const bad = res.filter(r => !r.isValid);
-  const pick = await openDialog({
-    title: `Kiểm định bộ ${state.pack}: ${res.length - bad.length}/${res.length} hợp lệ`,
-    html: bad.length ? `<p class="muted small">Bấm số level để mở level đó.</p><table><tr><th>Level</th><th>Lỗi</th></tr>${bad.map(r =>
-      `<tr><td><button data-open="${esc(r.name)}">${esc(r.name)}</button></td><td>${r.errors.map(esc).join('<br>')}</td></tr>`).join('')}</table>`
-      : '<p class="ok">Mọi level đều hợp lệ.</p>',
-    onOpen: (dlg, close) => dlg.addEventListener('click', e => {
-      const b = e.target.closest('[data-open]');
-      if (b) close({ open: b.dataset.open });
-    }),
-  });
-  if (pick?.open) await openLevel(pick.open);
-}
-
 async function levelHub() {
   const opt = await api.levelhubOptions();
   const nums = state.levels.map(l => l.level);
@@ -956,16 +1108,6 @@ async function levelHub() {
   });
 }
 
-async function showAudit() {
-  const items = await api.audit({ pack: state.pack, limit: 300 });
-  openDialog({
-    title: `Audit — bộ ${state.pack}`,
-    html: `<table><tr><th>Lúc</th><th>Ai</th><th>Việc</th><th>Level</th><th>Chi tiết</th></tr>${items.map(a =>
-      `<tr><td>${esc(fmtTime(a.ts))}</td><td>${esc(shortUser(a.user))}</td><td>${esc(a.action)}</td><td>${esc(a.level ?? '')}${a.rev ? ` r${esc(a.rev)}` : ''}</td>
-        <td>${esc(a.detail?.changes ? a.detail.changes.join('; ') : a.detail ? JSON.stringify(a.detail).slice(0, 200) : '')}</td></tr>`).join('')}</table>`,
-  });
-}
-
 function showBiSetup() {
   openDialog({
     title: 'Chưa kết nối BI Level Hub',
@@ -988,37 +1130,70 @@ function share() {
   return openShare({ pack: state.pack, name: state.sel, rev: state.cur?.rev, draft: clone(state.draft), dirty: state.dirty });
 }
 
-function overview() {
-  return openOverview({
-    pack: state.pack, packs: state.packs, config: game.overview || {}, features: features(), onOpenLevel: n => openLevel(n),
-  });
-}
-
-async function reorder() {
-  if (state.dirty) return toast('Lưu hoặc bỏ thay đổi của level đang mở trước khi xếp lại', 'err');
-  await openReorder({
-    pack: state.pack, levels: state.levels, readOnly: packInfo()?.archived, metricDefault: game.overview?.metric,
-    onApplied: async () => {
-      await loadLevels();
-      if (state.sel) await openLevel(state.sel, { force: true });
-    },
-  });
-}
-
 const stepLevel = d => {
   const i = state.levels.findIndex(l => l.name === state.sel) + d;
   if (state.levels[i]) return openLevel(state.levels[i].name);
 };
 
+const VIEW_LABELS = { level: 'Level', library: 'Thư viện', order: 'Thứ tự', overview: 'Tổng quan bộ', activity: 'Hoạt động' };
+const VIEW_ACTION = { level: 'global.level', library: 'global.library', order: 'global.reorder', overview: 'global.overview', activity: 'global.activity' };
+const VIEW_WORDS = { level: 'sua editor', library: 'gallery anh luoi kho', order: 'xep sap xep reorder slot', overview: 'do kho chi so duong cong overview',
+  activity: 'audit nhat ky ai sua' };
+
+function showShortcuts() {
+  return openShortcuts().then(renderHints);
+}
+
+/** Tìm nhanh (Ctrl+K): level của bộ đang mở, các bộ, các màn và mọi lệnh (kể cả lệnh nằm trong menu). */
+function palette() {
+  const ro = packReadOnly();
+  const cmd = (group, label, run, { key = '', words = '', hidden = null } = {}) => ({ group, label, run, key: key && shortLabel(key), words, hidden });
+  openPalette({
+    levels: () => state.levels,
+    searchText: lv => `${game.searchText?.(lv.summary || {}) || ''} ${lv.author || ''}`,
+    onLevel: name => shell.openLevel(name).catch(e => toast(e.message, 'err')),
+    commands: [
+      ...VIEWS.map(v => cmd('Màn', `Màn ${VIEW_LABELS[v]}`, () => setView(v), { key: VIEW_ACTION[v], words: `man view ${VIEW_WORDS[v]}` })),
+      ...state.packs.filter(p => !p.archived && p.name !== state.pack).map(p => cmd('Bộ', `Mở bộ ${p.name}`, () => {
+        $('#pack-select').value = p.name;
+        return selectPack(p.name);
+      }, { words: `bo pack ${p.group || ''}` })),
+      cmd('Lệnh', 'Level mới…', () => newLevel(), { key: 'global.newLevel', words: 'tao them', hidden: () => ro }),
+      cmd('Lệnh', 'Nhập level từ file (zip / json)…', () => $('#file-import').click(), { words: 'import', hidden: () => ro }),
+      cmd('Lệnh', 'Tải cả bộ về máy (zip)', () => $('#btn-export').click(), { words: 'export xuat download' }),
+      cmd('Lệnh', 'Kiểm định cả bộ', () => setView('overview'), { words: 'validate loi' }),
+      cmd('Lệnh', 'Xuất Level Hub…', () => levelHub(), { words: 'levelhub bi day upload', hidden: () => !features().levelhub }),
+      cmd('Lệnh', 'Mở bộ từ BI Level Hub…', () => $('#btn-levelhub-bi').click(), { words: 'levelhub bi', hidden: () => !features().levelhub }),
+      cmd('Lệnh', 'Thùng rác…', () => $('#btn-trash').click(), { words: 'trash khoi phuc da xoa', hidden: () => !features().trash }),
+      cmd('Lệnh', 'Tạo bộ mới…', () => newPack(), { words: 'pack' }),
+      cmd('Lệnh', 'Cài đặt bộ…', () => packMenu(), { words: 'pack doi ten production luu tru' }),
+      cmd('Lệnh', 'Bản game WebGL…', () => openBuilds(), { words: 'build unity', hidden: () => !(features().webgame && can('gameBuilds')) }),
+      cmd('Lệnh', 'Quản trị…', () => openAdmin(), { words: 'admin quyen', hidden: () => $('#btn-admin').hidden }),
+      cmd('Lệnh', 'Phím tắt…', () => showShortcuts(), { key: 'global.shortcuts', words: 'keymap' }),
+      cmd('Lệnh', 'Có gì mới…', () => openWhatsNew(), { words: 'release changelog' }),
+      cmd('Lệnh', 'Đổi giao diện sáng / tối', () => $('#btn-theme').click(), { key: 'global.theme', words: 'theme dark light' }),
+      cmd('Lệnh', 'Chế độ tập trung (ẩn danh sách level)', () => setFocus(!document.body.classList.contains('focus')), { key: 'global.focus', words: 'focus' }),
+    ],
+  });
+}
+
 /** Lệnh của phím tắt (keymap.mjs); game thêm lệnh của mình qua game.shortcuts + game.onShortcut. */
 const ACTIONS_RUN = {
-  'global.search': () => $('#search').focus(),
-  'global.newLevel': () => newLevel(),
-  'global.overview': () => overview(),
-  'global.reorder': () => features().reorder && reorder(),
+  'global.palette': () => palette(),
+  'global.search': () => {
+    if (state.view === 'library') return views.library?.focusSearch();
+    setView('level');
+    $('#search').focus();
+  },
+  'global.newLevel': () => !packReadOnly() && newLevel(),
+  'global.level': () => setView('level'),
+  'global.library': () => setView('library'),
+  'global.reorder': () => setView('order'),
+  'global.overview': () => setView('overview'),
+  'global.activity': () => setView('activity'),
   'global.theme': () => $('#btn-theme').click(),
-  'global.shortcuts': () => openShortcuts(),
-  'global.focus': () => setFocus(!document.body.classList.contains('focus')),
+  'global.shortcuts': () => showShortcuts(),
+  'global.focus': () => { setView('level'); setFocus(!document.body.classList.contains('focus')); },
   'level.save': () => save(),
   'level.edit': () => (state.editing ? stopEdit() : startEdit()),
   'level.play': () => features().webgame && showInGame('play'),
@@ -1034,15 +1209,16 @@ for (const a of game.shortcuts || []) ACTIONS_RUN[a.id] ||= () => game.onShortcu
 function onEvent(type, d) {
   if (type === 'connection') {
     $('#conn').classList.toggle('on', d.online);
+    $('#conn-text').textContent = d.online ? 'Đã kết nối' : 'Mất kết nối — đang thử lại';
     return;
   }
   if (type === 'presence') {
-    $('#online').textContent = d.online ? `${d.online.length} online` : '';
-    $('#online').title = (d.online || []).join('\n');
+    renderOnline(d.online || []);
     return;
   }
   if (type === 'game.build') {
     if (features().webgame) onBuildEvent(d, d.author === state.me.email);
+    renderGameStatus();
     return;
   }
   if (type === 'settings.updated') {
@@ -1088,34 +1264,16 @@ function wire() {
   $('#btn-import').addEventListener('click', () => $('#file-import').click());
   $('#file-import').addEventListener('change', e => { importFile(e.target.files[0]); e.target.value = ''; });
   $('#btn-export').addEventListener('click', async () => downloadResponse(await api.exportPack(state.pack), `${state.pack}.zip`));
-  $('#btn-validate').addEventListener('click', () => validatePack().catch(e => toast(e.message, 'err')));
-  $('#btn-levelhub').addEventListener('click', () => levelHub().catch(e => toast(e.message, 'err')));
-  $('#btn-audit').addEventListener('click', () => showAudit().catch(e => toast(e.message, 'err')));
-  $('#btn-overview').addEventListener('click', () => overview().catch(e => toast(e.message, 'err')));
-  $('#btn-reorder').addEventListener('click', () => reorder().catch(e => toast(e.message, 'err')));
   $('#btn-trash').addEventListener('click', () => openTrash({ canArchive: can('archive'), onChanged: () => loadPacks(state.pack) }).catch(e => toast(e.message, 'err')));
   $('#btn-admin').addEventListener('click', () => openAdmin().catch(e => toast(e.message, 'err')));
-  $('#btn-keys').addEventListener('click', () => openShortcuts());
+  $('#btn-keys').addEventListener('click', () => showShortcuts());
+  $('#hintbar').addEventListener('click', e => { if (e.target.closest('[data-keys]')) showShortcuts(); });
   $('#btn-share').addEventListener('click', () => Promise.resolve(share()).catch(e => toast(e.message, 'err')));
-  $('#btn-grid').addEventListener('click', () => {
-    gridMode = !gridMode;
-    try { localStorage.setItem(GRID_KEY, gridMode ? '1' : '0'); } catch { /* bỏ qua */ }
-    renderList();
-  });
-  $('#btn-capture').addEventListener('click', async () => {
-    const b = $('#btn-capture');
-    b.disabled = true;
-    try {
-      await captureMissing(state.pack, state.levels, (i, n) => { b.textContent = `📷 ${i}/${n}`; });
-      invalidateThumbs();
-      renderList();
-    } catch (e) {
-      toast(e.message, 'err');
-    } finally {
-      b.disabled = false;
-      b.textContent = '📷 Chụp ảnh còn thiếu';
-    }
-  });
+  $('#btn-palette').addEventListener('click', () => palette());
+  for (const b of $$('.views-nav button')) b.addEventListener('click', () => setView(b.dataset.view));
+  $('#st-game').addEventListener('click', () => openBuilds().then(renderGameStatus).catch(e => toast(e.message, 'err')));
+  $('#btn-prev').addEventListener('click', () => stepLevel(-1));
+  $('#btn-next').addEventListener('click', () => stepLevel(1));
   $('#btn-theme').addEventListener('click', () => {
     const cur = document.documentElement.dataset.theme;
     const dark = cur ? cur === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1152,9 +1310,8 @@ function wire() {
   $('#btn-revert').addEventListener('click', () => revertDraft().catch(e => toast(e.message, 'err')));
   $('#btn-delete').addEventListener('click', deleteLevel);
   $('#btn-relevel').addEventListener('click', relevel);
-  $('#btn-promote').addEventListener('click', promote);
-  // menu ⋯: bấm một mục thì đóng menu; bấm ra ngoài cũng đóng
-  // menu (⋯, Nhập / Tải, tài khoản): bấm một mục thì đóng; bấm ra ngoài hoặc mở menu khác cũng đóng
+  $('#btn-promote').addEventListener('click', () => promote());
+  // menu (⋯, tài khoản): bấm một mục thì đóng; bấm ra ngoài hoặc mở menu khác cũng đóng
   for (const m of $$('.more-menu')) {
     $('.menu', m).addEventListener('click', () => m.removeAttribute('open'));
     m.addEventListener('toggle', () => { if (m.open) for (const o of $$('.more-menu')) if (o !== m) o.removeAttribute('open'); });
@@ -1173,13 +1330,13 @@ function wire() {
   $('#btn-download').addEventListener('click', () =>
     downloadBlob(new Blob([JSON.stringify(state.draft, null, 2) + '\n'], { type: 'application/json' }), `${state.sel}.json`));
   $('#btn-json-apply').addEventListener('click', applyJson);
-  for (const b of $$('.tabs button')) b.addEventListener('click', () => setTab(b.dataset.tab));
+  for (const b of $$('.level-head .tabs button')) b.addEventListener('click', () => setTab(b.dataset.tab));
 
   document.addEventListener('keydown', e => {
-    if ($('.dialog-backdrop')) return;
+    if ($('.dialog-backdrop, .palette-backdrop')) return;
     const id = actionFor(e);
     const run = ACTIONS_RUN[id];
-    if (!run || (id.startsWith('level.') && !state.sel)) return;
+    if (!run || (id.startsWith('level.') && (!state.sel || state.view !== 'level'))) return;
     e.preventDefault();
     Promise.resolve(run()).catch(err => toast(err.message, 'err'));
   });

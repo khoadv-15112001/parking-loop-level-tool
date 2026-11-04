@@ -1,8 +1,9 @@
-// Tổng quan bộ (chạy hết trên trình duyệt, dùng được với cả hai server): số level theo nhóm (vd độ khó), đường chỉ số theo
-// số level, so sánh tối đa 3 bộ, cảnh báo nhảy vọt / chuỗi dài cùng nhóm (bấm để mở level), số liệu chơi thử nếu server có.
-// Chỉ số và nhóm lấy từ tóm tắt level (`levelSummary` của game); manifest `overview: {group, metric}` chọn mặc định.
+// Màn Tổng quan bộ (chạy hết trên trình duyệt, dùng được với cả hai server): số level theo nhóm (vd độ khó), đường chỉ số
+// theo số level, so sánh tối đa 3 bộ, cảnh báo nhảy vọt / chuỗi dài cùng nhóm, kiểm định cả bộ (bấm để mở level), số
+// liệu chơi thử nếu server có. Chỉ số và nhóm lấy từ tóm tắt level (`levelSummary` của game); manifest
+// `overview: {group, metric}` chọn mặc định. Các hàm thuần (numericKeys, groupKeys, lineChart, warnings) dùng lại được.
 import { api, downloadBlob } from './api.mjs';
-import { $, esc, openDialog } from './ui.mjs';
+import { $, $$, esc, fmtTime } from './ui.mjs';
 
 const COLORS = ['var(--lc-accent)', 'var(--lc-warn)', 'var(--lc-ok)'];
 const GROUP_COLORS = ['#4b90ff', '#1f9d55', '#c27a00', '#d33b3b', '#8e5cd9', '#0f9fb5', '#7a8599', '#c2187a'];
@@ -24,6 +25,20 @@ export function groupKeys(levels) {
     vals.get(k).add(String(v));
   }
   return [...vals].filter(([, s]) => s.size >= 2 && s.size <= 8).map(([k]) => k);
+}
+
+/** Nhóm mặc định: manifest overview.group, rồi khoá có tên kiểu độ khó / chế độ, rồi khoá chữ; không đoán bằng khoá số. */
+export function defaultGroup(levels, config = {}, metric = null) {
+  const groups = groupKeys(levels);
+  const textual = k => levels.some(l => typeof l.summary?.[k] === 'string' || typeof l.summary?.[k] === 'boolean');
+  return groups.includes(config.group) ? config.group
+    : groups.find(k => k !== metric && /diff|khó|tier|hard|mode|type|loại/i.test(k)) ?? groups.find(k => k !== metric && textual(k)) ?? null;
+}
+
+/** Màu cố định cho từng giá trị của nhóm (theo thứ tự chữ). */
+export function groupColors(levels, group) {
+  const vals = [...new Set(levels.map(l => String(l.summary?.[group])))].sort();
+  return v => GROUP_COLORS[Math.max(0, vals.indexOf(String(v))) % GROUP_COLORS.length];
 }
 
 /** SVG đường: series [{label, points: [[x, y]], dashed?, groups?: [nhóm theo điểm]}]. Điểm có data-level để bấm mở. */
@@ -73,68 +88,128 @@ export function warnings(levels, metric, group) {
   return out.sort((a, b) => a.level - b.level);
 }
 
-export async function openOverview({ pack, packs, config = {}, features = {}, onOpenLevel }) {
+const options = (list, cur, none = null) => (none != null ? `<option value="">${esc(none)}</option>` : '')
+  + list.map(k => `<option ${k === cur ? 'selected' : ''}>${esc(k)}</option>`).join('');
+
+/**
+ * Màn Tổng quan bộ trong vỏ app. shell: {state, game, features(), openLevel(name), checkPack()}; root: thân màn, tools:
+ * thanh công cụ ở hàng ngữ cảnh. Trả {render} — vỏ gọi khi mở màn, đổi bộ, danh sách level tải lại.
+ */
+export function mountOverview(shell, root, tools) {
+  let pack = null, metric = null, group = null, groupTouched = false, compare = [], stats = null;
   const cache = new Map();
   const levelsOf = async p => {
+    if (p === shell.state.pack) return shell.state.levels;
     if (!cache.has(p)) cache.set(p, (await api.levels(p)).filter(l => !l.deleted));
     return cache.get(p);
   };
-  const base = await levelsOf(pack);
-  const keys = numericKeys(base), groups = groupKeys(base);
-  let metric = keys.includes(config.metric) ? config.metric : keys[0] ?? null;
-  // Nhóm mặc định: manifest overview.group, rồi khoá có tên kiểu độ khó / chế độ, rồi khoá chữ; không đoán bằng khoá số.
-  const textual = k => base.some(l => typeof l.summary?.[k] === 'string' || typeof l.summary?.[k] === 'boolean');
-  let group = groups.includes(config.group) ? config.group
-    : groups.find(k => k !== metric && /diff|khó|tier|hard|mode|type|loại/i.test(k)) ?? groups.find(k => k !== metric && textual(k)) ?? null;
-  let compare = [];
-  let stats = null;
-  if (features.plays) stats = await api.playStats(pack).catch(() => null);
-  const groupColor = v => GROUP_COLORS[[...new Set(base.map(l => String(l.summary?.[group])))].sort().indexOf(String(v)) % GROUP_COLORS.length];
 
-  const render = async dlg => {
+  tools.innerHTML = `<label class="inline">Chỉ số <select id="ov-metric"></select></label>
+    <label class="inline">Nhóm <select id="ov-group"></select></label>
+    <label class="inline">So với <select class="ov-compare"></select></label><select class="ov-compare" title="So với bộ thứ hai"></select>
+    <span class="grow"></span>
+    <button id="ov-svg" title="Tải biểu đồ dạng SVG">⇩ SVG</button>
+    <button id="ov-plays" title="Tải mọi lượt chơi thử của bộ (JSONL) cho phân tích, solver, AI" hidden>⇩ Dữ liệu lượt chơi</button>`;
+  root.innerHTML = `<div class="page">
+    <p id="ov-stats" class="ov-stats"></p>
+    <section class="card"><div id="ov-chart"></div></section>
+    <div class="cols2">
+      <section class="card"><h3>Kiểm định cả bộ</h3>
+        <div class="row"><span id="ov-check-state" class="small"></span><span class="grow"></span><button id="ov-check">Kiểm định lại</button></div>
+        <div id="ov-valid"></div></section>
+      <section class="card"><h3>Cảnh báo về độ khó <span class="muted small">nhảy vọt, chuỗi dài cùng nhóm</span></h3><div id="ov-warn"></div></section>
+    </div></div>`;
+
+  const draw = async () => {
+    const base = shell.state.levels;
     const sets = [[pack, base], ...await Promise.all(compare.map(async p => [p, await levelsOf(p)]))];
+    const color = group ? groupColors(base, group) : () => COLORS[0];
     const counts = new Map();
     for (const l of base) counts.set(String(l.summary?.[group] ?? '—'), (counts.get(String(l.summary?.[group] ?? '—')) || 0) + 1);
     const played = stats ? Object.values(stats) : [];
     const plays = played.reduce((n, s) => n + s.plays, 0), wins = played.reduce((n, s) => n + s.wins, 0);
-    $('#ov-stats', dlg).innerHTML = `<b>${esc(base.length)}</b> level${group ? ` · ${[...counts].sort().map(([k, n]) => `<span class="badge" style="border-color:${groupColor(k)}">${esc(group)} ${esc(k)}: ${n}</span>`).join(' ')}` : ''}`
+    $('#ov-stats', root).innerHTML = `<b>${esc(base.length)}</b> level${group ? ` · ${[...counts].sort().map(([k, n]) =>
+      `<span class="gchip" style="--c:${color(k)}">${esc(k)} <b>${n}</b></span>`).join(' ')}` : ''}`
       + (stats ? ` · chơi thử: ${plays} lượt ở ${played.length} level, thắng ${plays ? Math.round((wins / plays) * 100) : 0}%` : '');
-    $('#ov-chart', dlg).innerHTML = metric ? lineChart(sets.map(([p, ls]) => ({
+    $('#ov-chart', root).innerHTML = metric ? lineChart(sets.map(([p, ls]) => ({
       label: p, points: ls.map(l => [Number(l.name), Number(l.summary?.[metric])]), groups: group ? ls.map(l => l.summary?.[group]) : null,
-    })), { groupColor: compare.length ? null : groupColor }) : '<p class="muted small">Tóm tắt level của game chưa có chỉ số dạng số (levelSummary).</p>';
+    })), { width: 1200, height: 260, groupColor: compare.length || !group ? null : color })
+      : '<p class="muted small">Tóm tắt level của game chưa có chỉ số dạng số (levelSummary).</p>';
     const warn = metric ? warnings(base, metric, group) : [];
-    $('#ov-warn', dlg).innerHTML = warn.length
-      ? `<ul class="small">${warn.slice(0, 60).map(w => `<li><button data-open="${w.level}">Level ${w.level}</button> ${esc(w.text)}</li>`).join('')}</ul>`
+    $('#ov-warn', root).innerHTML = warn.length
+      ? `<ul class="small links">${warn.slice(0, 80).map(w => `<li><button class="link" data-open="${w.level}">Level ${w.level}</button> ${esc(w.text)}</li>`).join('')}</ul>`
       : '<p class="muted small">Không có cảnh báo.</p>';
   };
 
-  const others = packs.filter(p => p.name !== pack && !p.archived).map(p => p.name);
-  const pick = await openDialog({
-    title: `Tổng quan bộ ${pack}`, wide: true,
-    html: `<div class="ro-tools"><label>Chỉ số<select id="ov-metric">${keys.map(k => `<option ${k === metric ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select></label>
-      <label>Nhóm<select id="ov-group"><option value="">—</option>${groups.map(k => `<option ${k === group ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select></label>
-      ${[1, 2].map(i => `<label>So với bộ<select class="ov-compare"><option value="">—</option>${others.map(p => `<option>${esc(p)}</option>`).join('')}</select></label>`).join('')}</div>
-      <p id="ov-stats" class="small"></p><div id="ov-chart"></div><h4>Cảnh báo</h4><div id="ov-warn"></div>`,
-    actions: [
-      { label: 'Tải SVG', onClick: dlg => { downloadBlob(new Blob([$('#ov-chart svg', dlg)?.outerHTML || ''], { type: 'image/svg+xml' }), `${pack}-${metric}.svg`); return false; } },
-      ...(features.plays ? [{ label: 'Tải dữ liệu lượt chơi', onClick: async () => { const { downloadPlays } = await import('./playsview.mjs'); await downloadPlays(pack); return false; } }] : []),
-      { label: 'Đóng', value: null },
-    ],
-    onOpen: (dlg, close) => {
-      render(dlg);
-      $('#ov-metric', dlg).addEventListener('change', e => { metric = e.target.value; render(dlg); });
-      $('#ov-group', dlg).addEventListener('change', e => { group = e.target.value || null; render(dlg); });
-      for (const sel of dlg.querySelectorAll('.ov-compare')) {
-        sel.addEventListener('change', () => {
-          compare = [...new Set([...dlg.querySelectorAll('.ov-compare')].map(x => x.value).filter(Boolean))];
-          render(dlg);
-        });
-      }
-      dlg.addEventListener('click', e => {
-        const n = e.target.closest('[data-open], circle[data-level]');
-        if (n) close({ open: n.dataset.open || n.dataset.level });
-      });
-    },
+  const drawValid = () => {
+    const s = shell.state;
+    const el = $('#ov-valid', root), st = $('#ov-check-state', root);
+    if (s.checked?.pack !== pack) {
+      st.textContent = 'Đang kiểm định…';
+      el.innerHTML = '';
+      return;
+    }
+    const bad = [...s.invalid], warned = [...s.warned].filter(([n]) => !s.invalid.has(n));
+    st.innerHTML = `${bad.length ? `<span class="err">✗ ${bad.length} lỗi</span>` : '<span class="ok">✓ Không có lỗi</span>'}`
+      + `${warned.length ? ` · <span class="warn">! ${warned.length} cảnh báo</span>` : ''} · ${esc(s.levels.length)} level`
+      + ` <span class="muted">lúc ${esc(fmtTime(new Date(s.checked.at).toISOString()))}</span>`;
+    const row = ([n, msgs], cls) => `<tr><td><button class="link" data-open="${esc(n)}">${esc(n)}</button></td><td class="${cls}">${msgs.map(esc).join('<br>')}</td></tr>`;
+    el.innerHTML = bad.length || warned.length ? `<table class="tbl">${bad.map(r => row(r, 'err')).join('')}${warned.slice(0, 200).map(r => row(r, 'warn')).join('')}</table>` : '';
+  };
+
+  const runCheck = async () => {
+    $('#ov-check', root).disabled = true;
+    try {
+      await shell.checkPack();
+      drawValid();
+    } catch (e) {
+      $('#ov-check-state', root).innerHTML = `<span class="err">Không kiểm định được: ${esc(e.message)}</span>`;
+    } finally {
+      $('#ov-check', root).disabled = false;
+    }
+  };
+
+  const fillTools = () => {
+    const base = shell.state.levels;
+    const others = shell.state.packs.filter(p => p.name !== pack && !p.archived).map(p => p.name);
+    $('#ov-metric', tools).innerHTML = options(numericKeys(base), metric);
+    $('#ov-group', tools).innerHTML = options(groupKeys(base), group, '—');
+    $$('.ov-compare', tools).forEach((sel, i) => { sel.innerHTML = options(others, compare[i] ?? null, '—'); });
+    $('#ov-plays', tools).hidden = !shell.features().plays;
+  };
+
+  tools.addEventListener('change', e => {
+    if (e.target.id === 'ov-metric') metric = e.target.value;
+    else if (e.target.id === 'ov-group') { group = e.target.value || null; groupTouched = true; }
+    else if (e.target.classList.contains('ov-compare')) compare = [...new Set($$('.ov-compare', tools).map(x => x.value).filter(Boolean))];
+    draw();
   });
-  if (pick?.open) onOpenLevel?.(String(pick.open));
+  $('#ov-svg', tools).addEventListener('click', () => downloadBlob(new Blob([$('#ov-chart svg', root)?.outerHTML || ''], { type: 'image/svg+xml' }), `${pack}-${metric}.svg`));
+  $('#ov-plays', tools).addEventListener('click', async () => { const { downloadPlays } = await import('./playsview.mjs'); await downloadPlays(pack); });
+  $('#ov-check', root).addEventListener('click', () => runCheck().catch(() => {}));
+  root.addEventListener('click', e => {
+    const n = e.target.closest('[data-open], circle[data-level]');
+    if (n) shell.openLevel(String(n.dataset.open || n.dataset.level));
+  });
+
+  async function render() {
+    const s = shell.state;
+    const base = s.levels;
+    if (pack !== s.pack) {
+      pack = s.pack;
+      cache.clear();
+      compare = [];
+      groupTouched = false;
+      metric = null;
+      stats = shell.features().plays ? await api.playStats(pack).catch(() => null) : null;
+    }
+    const keys = numericKeys(base), cfg = shell.game.overview || {};
+    if (!keys.includes(metric)) metric = keys.includes(cfg.metric) ? cfg.metric : keys[0] ?? null;
+    if (!groupTouched || (group && !groupKeys(base).includes(group))) group = defaultGroup(base, cfg, metric);
+    fillTools();
+    await draw();
+    if (s.checked?.pack !== pack) runCheck().catch(() => {});
+    else drawValid();
+  }
+  return { render };
 }

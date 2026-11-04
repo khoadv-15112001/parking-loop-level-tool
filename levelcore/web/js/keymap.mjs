@@ -4,10 +4,14 @@ import { $, esc, openDialog } from './ui.mjs';
 
 export const SCOPES = [['global', 'Chung'], ['level', 'Level đang mở']];
 const ACTIONS = [
-  { id: 'global.search', scope: 'global', label: 'Tìm level', keys: ['/'] },
+  { id: 'global.palette', scope: 'global', label: 'Tìm nhanh: level, bộ, lệnh', keys: ['ctrl+k'] },
+  { id: 'global.search', scope: 'global', label: 'Tìm level trong danh sách', keys: ['/'] },
   { id: 'global.newLevel', scope: 'global', label: 'Level mới', keys: ['n'] },
-  { id: 'global.overview', scope: 'global', label: 'Tổng quan bộ', keys: ['o'] },
-  { id: 'global.reorder', scope: 'global', label: 'Xếp thứ tự bộ', keys: ['shift+r'] },
+  { id: 'global.level', scope: 'global', label: 'Màn Level', keys: ['alt+1'] },
+  { id: 'global.library', scope: 'global', label: 'Màn Thư viện', keys: ['alt+2', 'g'] },
+  { id: 'global.reorder', scope: 'global', label: 'Màn Thứ tự', keys: ['alt+3', 'shift+r'] },
+  { id: 'global.overview', scope: 'global', label: 'Màn Tổng quan bộ', keys: ['alt+4', 'o'] },
+  { id: 'global.activity', scope: 'global', label: 'Màn Hoạt động', keys: ['alt+5'] },
   { id: 'global.theme', scope: 'global', label: 'Đổi giao diện sáng / tối', keys: ['t'] },
   { id: 'global.focus', scope: 'global', label: 'Chế độ tập trung (ẩn danh sách level)', keys: ['\\'] },
   { id: 'global.shortcuts', scope: 'global', label: 'Bảng phím tắt', keys: ['?'] },

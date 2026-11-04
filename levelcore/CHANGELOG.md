@@ -16,13 +16,13 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Game mới: `new_game.mjs` chỉ sinh manifest, luật JS, test; core dựng giao diện, game muốn riêng thì khai `app`.
 - Server Node đủ route như server Python; bản game từ Jenkins: nhánh theo dõi lên ngay, nhánh khác chờ admin chọn.
 - Chơi thử: link + QR cho điện thoại, ▶ Chơi rN trong Lịch sử, mọi lượt chơi được lưu (xuất JSONL cho phân tích, AI).
-- Bộ level: Xếp thứ tự (kéo thả, ghim, hoàn tác), Tổng quan bộ (biểu đồ, cảnh báo, so 3 bộ), lưới ảnh level.
+- Màn Thư viện (lưới ảnh, lọc, chọn nhiều), Thứ tự (kéo thả, ghim, hoàn tác), Tổng quan bộ, Hoạt động; tìm nhanh Ctrl+K.
 - Thùng rác, Quản trị trong app (quyền theo việc, thông báo chung, sao lưu), phím tắt đổi được, bảng Có gì mới.
 
 ### Thay đổi
 - Tìm level theo số, dải `10-20`, danh sách `2,5,9` và chữ không dấu; form thuộc tính từ `fields` của game.
 - Lưu và nhập: xung đột có so sánh và "Lưu thành bản sao"; Nhập xem trước từng level trước khi ghi.
-- Giao diện mặc định: một hàng việc theo bộ, việc ít dùng và admin vào menu, Lưu chỉ hiện khi sửa, chip kiểm định.
+- Giao diện mặc định như Sand Jam / AntLevel: thanh màn, hàng của bộ, thanh trạng thái, gợi ý phím; Lưu chỉ hiện khi sửa.
 - Đẩy lên BI: lỗi 409 và 413 có gợi ý; BI không trả lời sau khi tạo bộ thì tool tự tìm lại bộ vừa tạo.
 - Bản game: giữ một bản trước để quay lại; gửi lại cùng bản build không cài lần hai.
 

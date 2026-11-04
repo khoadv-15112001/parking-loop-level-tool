@@ -39,18 +39,22 @@ Game cần core làm thêm việc gì thì thêm điểm mở rộng ở repo co
 - Chưa làm gì thì tool dùng vỏ của core (danh sách, form từ `fields`, JSON, lịch sử, nhập / xuất, Level Hub, chơi thử).
   Vỏ này nằm trong `levelcore/`; không chép nó hay code giao diện của game khác vào `game/`.
 - Game muốn giao diện riêng thì tự thiết kế cho đúng cách GD làm việc với game đó: thư mục riêng (vd `game/app/`), khai
-  `"app": "app"` trong manifest. Khi đó `/app/` là giao diện của game; module không có bố cục của core import ở
-  `/core/js/`: `api.mjs` (gọi `setStoragePrefix` trước), `sync.mjs` (SSE, khoá), `query.mjs` (tìm theo số, dải, chữ không
-  dấu), `fields.mjs`, `webgame.mjs` (khung game WebGL), `playrecorder.mjs` (ghi lượt chơi), `keymap.mjs`, `overview.mjs`,
-  `reorder.mjs`, `share.mjs`, `gallery.mjs`, `levelhub_bi.mjs`, `biauth.mjs`, `releases.mjs`.
+  `"app": "app"` trong manifest. Khi đó `/app/` là giao diện của game; module của core import ở `/core/js/`: `api.mjs`
+  (gọi `setStoragePrefix` trước), `sync.mjs` (SSE, khoá), `query.mjs` (tìm theo số, dải, chữ không dấu), `fields.mjs`,
+  `webgame.mjs` (khung game WebGL), `playrecorder.mjs` (ghi lượt chơi), `keymap.mjs`, `palette.mjs` (tìm nhanh Ctrl+K),
+  `gallery.mjs` (ảnh level, chụp ảnh), `share.mjs`, `levelhub_bi.mjs`, `biauth.mjs`, `releases.mjs`; hàm thuần của
+  `overview.mjs` (`numericKeys`, `groupKeys`, `lineChart`, `warnings`) và `reorder.mjs` (`moveItems`, `undoOrder`).
 - Bridge của bản WebGL nên khai `caps: ['capture']` (ảnh level) và gửi `{type: 'event'}` cho mỗi nước đi: dữ liệu lượt
   chơi dùng cho phân tích, solver, AI về sau (`levelcore/contracts/README.md`, mục Bridge).
 - Giao diện riêng vẫn phải giữ các luồng an toàn của core: khoá khi sửa, lưu với `If-Match`, xử lý 412 (xung đột) và 423
   (đang khoá), nhập qua bước xem trước.
-- Bố cục theo người dùng và tần suất, như vỏ của core: việc GD / Creative làm hằng ngày (tìm, mở, sửa, chơi thử, lưu) nằm
-  ngoài và luôn thấy; việc với cả bộ ở một hàng; việc ít dùng (nhập / tải, audit, thùng rác) trong menu; việc của admin
-  (Quản trị, bản game) chỉ hiện với người có quyền (`rights` trong `/api/me`). Nút chỉ hiện khi dùng được ở trạng thái đó
-  (Lưu chỉ khi đang sửa). Phần nhìn level (khung game, editor của game) chiếm nhiều chỗ nhất.
+- Bố cục giữ quen tay với Sand Jam / AntLevel, như vỏ của core: hàng trên là các màn (Level, Thư viện, Thứ tự, Tổng quan
+  bộ, Hoạt động) và tìm nhanh Ctrl+K; hàng dưới là bộ đang mở rồi công cụ của màn; đáy là thanh trạng thái (kết nối, số
+  level, bản game, phiên bản, người online) và dòng gợi ý phím của màn sửa level.
+- Theo người dùng và tần suất: việc GD / Creative làm hằng ngày (tìm, mở, sửa, chơi thử, lưu) luôn thấy; việc ít dùng
+  (nhập / tải, thùng rác) ở cuối danh sách hoặc menu; việc của admin (Quản trị, bản game) chỉ hiện với người có quyền
+  (`rights` trong `/api/me`). Nút chỉ hiện khi dùng được ở trạng thái đó (Lưu chỉ khi đang sửa). Phần nhìn level (khung
+  game, editor của game) chiếm nhiều chỗ nhất; level có trạng thái kiểm định (chấm xanh / cam / đỏ) ở mọi danh sách.
 
 ## Deploy và phát hành
 

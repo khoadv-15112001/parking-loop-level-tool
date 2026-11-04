@@ -240,6 +240,20 @@ function onCapture(d) {
 /** Bản game đang mở chụp được ảnh (bridge khai caps: ['capture'] trong ready). */
 export const canCapture = () => !!g?.ready && !!g.caps?.includes('capture');
 
+/** Khả năng của bản game (caps trong ready); chưa tải game thì tải rồi đợi. [] khi server chưa có bản game. */
+export async function gameCaps(timeoutMs = 120000) {
+  if (!dock || !(await available())) return [];
+  if (!g) build();
+  const t0 = Date.now();
+  while (g && !g.ready && Date.now() - t0 < timeoutMs) await new Promise(r => setTimeout(r, 250));
+  return g?.ready ? g.caps : [];
+}
+
+/** Thông tin bản game đang dùng (thanh trạng thái); null khi chưa có. */
+export async function currentBuild() {
+  return (await available()) ? info : null;
+}
+
 /** Chụp màn đang xem trong khung game, trả data URL PNG. */
 export function captureNow(timeoutMs = 8000) {
   if (!canCapture()) return Promise.reject(new Error('Bản game này chưa hỗ trợ chụp ảnh (bridge chưa khai caps capture)'));
@@ -299,6 +313,9 @@ export async function showLevel(pack, n, data, mode = 'preview', source = 'draft
 /** Đang xem (preview) đúng level này của bộ này? — main.mjs gọi khi bản nháp đổi để cập nhật khung game. */
 export const isPreviewing = (pack, levelNo) => !!g && g.mode === 'preview' && g.pack === pack && g.want === Number(levelNo);
 
+/** Khung game đang ở đúng level này của bộ này (xem hay chơi)? Màn khác chụp ảnh thì khung game sang level khác. */
+export const isShowing = (pack, levelNo) => !!g && g.pack === pack && g.want === Number(levelNo);
+
 /** Bản nháp đổi khi đang xem: cập nhật level đó trong game rồi dựng lại. Đang dựng dở thì xếp hàng bản mới nhất. */
 export function refreshPreview(data) {
   if (!g || g.mode !== 'preview' || !g.levels) return;
@@ -345,7 +362,7 @@ export function onBuildEvent(d, mine = false) {
 }
 
 /** Hộp bản game: bản đang dùng, bản CI chờ chọn, bản trước để quay lại, level CI gần đây; tải bản mới (admin). */
-async function openBuilds() {
+export async function openBuilds() {
   let data = { builds: [], levels: [], ci: {} };
   try { data = await api.gameBuilds(); } catch (e) { toast(e.message, 'err'); }
   const rows = data.builds.map(b => {

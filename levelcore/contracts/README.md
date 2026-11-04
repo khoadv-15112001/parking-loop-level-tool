@@ -179,7 +179,8 @@ Bắt buộc: `tool`, `game`, `prefix`, `rules`. `web` (mặc định thư mục
 đọc được mọi file trong đó. Không có `web/game.mjs` thì core dựng nó từ manifest (`slug`, `storagePrefix`, `webgame`) và
 module luật (`fields`). `app` là giao diện riêng của game (bỏ thì dùng vỏ của core). `web/releases.json` là bảng Có gì mới.
 `overview: {group, metric}` chọn khoá tóm tắt mặc định để chia nhóm và vẽ đường ở Tổng quan bộ, Xếp thứ tự.
-`listView: 'grid' | 'list'` là kiểu danh sách mặc định (lưới ảnh hợp với game nhìn hình là nhận ra level).
+`listView: 'grid' | 'list'`: `'grid'` thì lần đầu mở tool vào màn Thư viện (lưới ảnh, hợp với game nhìn hình là nhận ra
+level), mặc định vào màn Level; sau đó tool nhớ màn mỗi người mở lần trước.
 
 ### Module luật (`rules`)
 

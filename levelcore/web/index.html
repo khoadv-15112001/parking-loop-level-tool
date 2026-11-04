@@ -24,46 +24,25 @@
   </div>
 
   <div id="app" hidden>
-    <!-- Một hàng: tool · bộ đang mở (chọn, tạo, cài đặt) · việc GD làm với cả bộ · menu việc ít dùng · người online · Quản trị
-         (chỉ admin) · tài khoản. Màn hẹp thì nút chỉ còn icon (tên ở title). -->
+    <!-- Như Sand Jam / AntLevel. Hàng 1: tool · các màn · tìm nhanh (Ctrl+K) · sáng / tối · Quản trị (chỉ admin) · tài khoản.
+         Hàng 2: bộ đang mở (chọn, tạo, cài đặt) rồi công cụ của màn đang mở. Đáy: kết nối, số level, bản game, phiên bản,
+         người online. Màn Level: danh sách (tìm, lọc; dưới cùng tạo / nhập / tải) | level đang mở; dòng gợi ý phím ở đáy. -->
     <header class="topbar">
-      <div class="brand"><span id="brand-name"></span> <span id="app-version" class="version" title="Phiên bản đang chạy"></span></div>
-      <div class="pack-ctl">
-        <select id="pack-select" title="Bộ level đang mở"></select>
-        <button id="btn-new-pack" class="icon" title="Tạo bộ mới">＋</button>
-        <button id="btn-pack-menu" class="icon" title="Cài đặt bộ: tên, nền tảng, nhóm, production, lưu trữ">⚙</button>
-        <button id="btn-hub-sync" title="Tải lại toàn bộ level của bộ này từ BI Level Hub" hidden>↻ Cập nhật từ Level Hub</button>
-      </div>
-      <nav class="pack-actions" aria-label="Việc với cả bộ">
-        <button id="btn-overview" title="Tổng quan bộ: số level theo nhóm, đường chỉ số, cảnh báo, so sánh bộ (O)"><span class="ic">📈</span><span class="lb">Tổng quan</span></button>
-        <button id="btn-reorder" title="Xếp lại thứ tự level của bộ (Shift+R)" hidden><span class="ic">⇅</span><span class="lb">Xếp thứ tự</span></button>
-        <button id="btn-validate" title="Kiểm định mọi level của bộ"><span class="ic">✓</span><span class="lb">Kiểm định bộ</span></button>
-        <button id="btn-levelhub" title="Xuất / đẩy dải level lên BI Level Hub"><span class="ic">⬆</span><span class="lb">Xuất Level Hub</span></button>
-        <details class="more-menu">
-          <summary title="Nhập level, tải bộ về máy, lấy bộ từ Level Hub"><span class="ic">⇩</span><span class="lb">Nhập / Tải</span> ▾</summary>
-          <div class="menu">
-            <button id="btn-import">Nhập level từ file (zip / json)…</button>
-            <button id="btn-export">Tải cả bộ về máy (zip)</button>
-            <button id="btn-levelhub-bi" hidden>Mở bộ từ BI Level Hub…</button>
-          </div>
-        </details>
-        <details class="more-menu">
-          <summary title="Thao tác khác">⋯</summary>
-          <div class="menu">
-            <button id="btn-trash" hidden>🗑 Thùng rác…</button>
-            <button id="btn-audit">Nhật ký thao tác (Audit)…</button>
-          </div>
-        </details>
-        <input id="file-import" type="file" accept=".zip,.json" hidden>
+      <div id="brand-name" class="brand"></div>
+      <nav class="views-nav" aria-label="Màn">
+        <button data-view="level" title="Danh sách level và level đang mở: xem, sửa, chơi thử (Alt+1)">Level</button>
+        <button data-view="library" title="Lưới ảnh level của bộ: lọc, xem nhanh, chọn nhiều level (Alt+2)">Thư viện</button>
+        <button data-view="order" title="Thứ tự level trong bộ: đường chỉ số, kéo thả xếp lại, xuất Level Hub (Alt+3)">Thứ tự</button>
+        <button data-view="overview" title="Tổng quan bộ: số level theo nhóm, đường chỉ số, cảnh báo, kiểm định cả bộ (Alt+4)">Tổng quan bộ</button>
+        <button data-view="activity" title="Hoạt động: ai làm gì, lúc nào (Alt+5)">Hoạt động</button>
       </nav>
       <span class="grow"></span>
-      <span id="conn" class="conn" title="Kết nối realtime"></span>
-      <span id="online" class="muted small"></span>
-      <button id="btn-admin" title="Quản trị: admin, quyền, thông báo, dung lượng, sao lưu" hidden><span class="ic">⚙</span><span class="lb">Quản trị</span></button>
+      <button id="btn-palette" class="palette-btn" title="Tìm level, đổi bộ, mở màn, chạy lệnh (Ctrl+K)">⌕ <span class="lb">Tìm level, bộ, lệnh…</span> <kbd>Ctrl K</kbd></button>
+      <button id="btn-theme" class="icon" title="Giao diện sáng / tối (T)">◐</button>
+      <button id="btn-admin" title="Quản trị: admin, quyền, thông báo, dung lượng, sao lưu" hidden>⚙ <span class="lb">Quản trị</span></button>
       <details class="more-menu user-menu">
         <summary id="me" title="Tài khoản"></summary>
         <div class="menu">
-          <button id="btn-theme">◐ Giao diện sáng / tối</button>
           <button id="btn-keys">⌨ Phím tắt…</button>
           <button id="btn-whatsnew">✦ Có gì mới…</button>
           <button id="btn-logout">⎋ Đăng xuất</button>
@@ -72,54 +51,83 @@
     </header>
     <div id="notice" class="notice" hidden><span class="notice-text"></span><button class="icon" title="Ẩn thông báo này">×</button></div>
 
-    <main class="layout">
+    <div class="ctxbar">
+      <div class="pack-ctl">
+        <select id="pack-select" title="Bộ level đang mở"></select>
+        <button id="btn-new-pack" class="icon" title="Tạo bộ mới">＋</button>
+        <button id="btn-pack-menu" class="icon" title="Cài đặt bộ: tên, nền tảng, nhóm, production, lưu trữ">⚙</button>
+        <button id="btn-hub-sync" class="icon" title="Cập nhật từ Level Hub: tải lại toàn bộ level của bộ này từ BI" hidden>↻</button>
+      </div>
+      <!-- Màn Level: level đang mở · kiểm định · rev · tab · trạng thái · thao tác (đang xem: Sửa / Chơi thử; đang sửa: Lưu / Hoàn tác / Xong) -->
+      <div class="ctx level-head" data-view="level">
+        <span id="lv-none" class="muted small">Chọn một level ở danh sách bên trái</span>
+        <button id="btn-prev" class="icon" title="Level trước (Alt+←)" hidden>‹</button>
+        <h2 id="lv-title" hidden></h2>
+        <button id="btn-next" class="icon" title="Level sau (Alt+→)" hidden>›</button>
+        <button id="lv-valid" class="chip" title="Kết quả kiểm định — bấm để xem" hidden></button>
+        <span id="lv-meta" class="muted small lv-meta"></span>
+        <nav class="tabs" hidden>
+          <button data-tab="overview" class="active" title="1">Tổng quan</button>
+          <button data-tab="json" title="2">JSON</button>
+          <button data-tab="history" title="3">Lịch sử</button>
+        </nav>
+        <span id="lv-lock" class="badge" hidden></span>
+        <span id="lv-dirty" class="badge warn" hidden>Chưa lưu</span>
+        <div id="lv-actions" class="lv-actions" hidden>
+          <button id="btn-edit" class="primary" title="Khoá level để sửa (E)">✎ Sửa</button>
+          <button id="btn-revert" hidden title="Bỏ mọi thay đổi chưa lưu, trả level về bản đã lưu (vẫn giữ quyền sửa)">↺ Hoàn tác</button>
+          <button id="btn-save" class="primary" hidden title="Ctrl+S">Lưu</button>
+          <button id="btn-done" hidden title="Thôi sửa, nhả khoá (E)">Xong</button>
+          <button id="btn-play" title="Chơi level này bằng game thật — kể cả bản nháp chưa lưu (P)">▶ Chơi thử</button>
+          <button id="btn-share" class="icon" title="Link chơi trên điện thoại (Shift+P)" hidden>📱</button>
+          <button id="btn-focus" class="icon" title="Chế độ tập trung: ẩn danh sách level, khung game rộng hơn (\)">⤢</button>
+          <details class="more-menu">
+            <summary title="Thao tác khác">⋯</summary>
+            <div class="menu">
+              <button id="btn-relevel">Đổi số</button>
+              <button id="btn-promote">Promote →</button>
+              <button id="btn-download">Tải .json</button>
+              <button id="btn-delete" class="danger">Xoá level</button>
+            </div>
+          </details>
+        </div>
+      </div>
+      <div id="library-tools" class="ctx" data-view="library" hidden></div>
+      <div id="order-tools" class="ctx" data-view="order" hidden></div>
+      <div id="overview-tools" class="ctx" data-view="overview" hidden></div>
+      <div id="activity-tools" class="ctx" data-view="activity" hidden></div>
+    </div>
+
+    <main class="views">
+     <section id="view-level" class="view view-level">
+      <div class="layout">
       <aside class="sidebar">
         <div class="list-tools">
           <input id="search" type="search" placeholder="Tìm: 12, 10-20, 2,5,9 hoặc chữ (/)" title="Tìm theo số level, dải số, danh sách số hoặc chữ (không cần dấu)">
-          <div class="row">
-            <select id="filter-mode" title="Lọc"></select>
-            <button id="btn-grid" class="icon" title="Danh sách / lưới ảnh">▦</button>
-            <button id="btn-new-level" class="primary" title="Level mới (số trống đầu tiên) — N">＋ Mới</button>
-          </div>
+          <select id="filter-mode" title="Lọc"></select>
         </div>
-        <div class="list-head"><span id="list-stats" class="muted small"></span>
-          <button id="btn-capture" class="small" title="Dựng từng level chưa có ảnh trong khung game rồi chụp" hidden>📷 Chụp ảnh còn thiếu</button></div>
         <ul id="level-list" class="level-list"></ul>
+        <div class="list-foot">
+          <div class="row">
+            <button id="btn-new-level" class="primary" title="Level mới (số trống đầu tiên) — N">＋ Mới</button>
+            <button id="btn-import" title="Nhập level từ file zip / json (xem trước rồi mới ghi)">⇪ Nhập</button>
+            <button id="btn-export" title="Tải cả bộ về máy (zip)">⇩ Tải</button>
+            <details class="more-menu up">
+              <summary title="Thao tác khác">⋯</summary>
+              <div class="menu">
+                <button id="btn-levelhub-bi" hidden>Mở bộ từ BI Level Hub…</button>
+                <button id="btn-trash" hidden>🗑 Thùng rác…</button>
+              </div>
+            </details>
+          </div>
+          <span id="list-stats" class="muted small"></span>
+        </div>
+        <input id="file-import" type="file" accept=".zip,.json" hidden>
       </aside>
 
       <section class="panel">
         <div id="panel-empty" class="empty muted">Chọn một level ở danh sách bên trái</div>
         <div id="panel-body" hidden>
-          <!-- 1 dòng: Level N · tab · thông tin rev (co lại khi hẹp) · trạng thái · thao tác chính · ⋯ thao tác phụ -->
-          <div class="panel-head">
-            <h2 id="lv-title"></h2>
-            <nav class="tabs">
-              <button data-tab="overview" class="active">Tổng quan</button>
-              <button data-tab="json">JSON</button>
-              <button data-tab="history">Lịch sử</button>
-            </nav>
-            <span id="lv-meta" class="muted small lv-meta"></span>
-            <button id="lv-valid" class="chip" title="Kết quả kiểm định — bấm để xem"></button>
-            <span id="lv-lock" class="badge"></span>
-            <span id="lv-dirty" class="badge warn" hidden>Chưa lưu</span>
-            <button id="btn-edit" class="primary" title="Khoá level để sửa (E)">✎ Sửa</button>
-            <button id="btn-revert" hidden title="Bỏ mọi thay đổi chưa lưu, trả level về bản đã lưu (vẫn giữ quyền sửa)">↺ Hoàn tác</button>
-            <button id="btn-save" class="primary" hidden title="Ctrl+S">Lưu</button>
-            <button id="btn-done" hidden title="Thôi sửa, nhả khoá (E)">Xong</button>
-            <button id="btn-play" title="Chơi level này bằng game thật — kể cả bản nháp chưa lưu (P)">▶ Chơi thử</button>
-            <button id="btn-share" class="icon" title="Link chơi trên điện thoại (Shift+P)" hidden>📱</button>
-            <button id="btn-focus" class="icon" title="Chế độ tập trung: ẩn danh sách level, khung game rộng hơn (\)">⤢</button>
-            <details class="more-menu">
-              <summary title="Thao tác khác">⋯</summary>
-              <div class="menu">
-                <button id="btn-relevel">Đổi số</button>
-                <button id="btn-promote">Promote →</button>
-                <button id="btn-download">Tải .json</button>
-                <button id="btn-delete" class="danger">Xoá level</button>
-              </div>
-            </details>
-          </div>
-
           <div class="tab" id="tab-overview">
             <!-- Thông số + kiểm định (trái, gọn) | khung game (to nhất: nhìn level ở mọi thể loại 2D / 3D / grid / match-3 / sort)
                  | thông tin của game (phải, chỉ hiện khi game vẽ gì vào, game/web/game.mjs renderOverview → ctx.info) -->
@@ -148,7 +156,23 @@
           </div>
         </div>
       </section>
+      </div>
+      <div id="hintbar" class="hintbar"></div>
+     </section>
+     <section id="view-library" class="view" hidden></section>
+     <section id="view-order" class="view" hidden></section>
+     <section id="view-overview" class="view" hidden></section>
+     <section id="view-activity" class="view" hidden></section>
     </main>
+
+    <footer class="statusbar">
+      <span id="conn" class="conn"></span><span id="conn-text">Đang kết nối…</span>
+      <span id="st-count" class="st"></span>
+      <button id="st-game" class="st link" hidden></button>
+      <span class="grow"></span>
+      <span id="app-version" class="st version" title="Phiên bản đang chạy"></span>
+      <span id="online" class="st online"></span>
+    </footer>
   </div>
 
   <div id="dialog-root"></div>
