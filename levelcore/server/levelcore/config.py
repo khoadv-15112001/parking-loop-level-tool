@@ -33,7 +33,8 @@ class Settings:
     validate_runner: str = str(CORE / "runner" / "validate_runner.mjs")
     validator_module: str = ""             # module JS validateLevel của game (GamePlugin.validator_module, từ gốc repo)
     default_packs: list = field(default_factory=lambda: ["develop", "product"])
-    admins: list = field(default_factory=list)   # email được phá khoá người khác / đổi cờ bộ (rỗng = mọi người)
+    admins: list = field(default_factory=list)   # email được phá khoá người khác / đổi cờ bộ
+    admins_open: bool = True               # danh sách admin rỗng = mọi người (plugin Python cũ); game manifest: chỉ DEV
     cors_origins: list = field(default_factory=list)
     # Đăng nhập Google của BI (Firebase) + BI Level Hub. Dev và prod của BI tách biệt:
     # API URL, Firebase project và appId phải CÙNG môi trường. Firebase Web App config là công khai.
@@ -49,6 +50,8 @@ class Settings:
     # Bản game WebGL playtest phục vụ ở /game/ để xem / chơi thử level đang sửa
     game_dir: str = str(DATA / "game")
     version: str = "dev"                   # SBP_VERSION trên BI Center = tag phát hành
+    format_version: int | None = None      # GamePlugin.format_version: ghi vào revision mới, đưa cho validator
+    game_web: str = ""                     # GamePlugin.web_dir: module web của game (rỗng = <web_root>/game/web)
 
     @classmethod
     def for_game(cls, game, **kw) -> "Settings":
@@ -56,7 +59,8 @@ class Settings:
         s = cls(tool_name=game.tool_name, env_prefix=game.env_prefix,
                 db_path=str(DATA / f"{game.tool_name.lower()}.db"),
                 validator_module=str(REPO / game.validator_module), default_packs=list(game.default_packs),
-                bi_app_id=game.bi_app_id)
+                bi_app_id=game.bi_app_id, admins_open=not game.from_manifest_file,
+                format_version=game.format_version, game_web=game.web_dir)
         for k, v in kw.items():
             setattr(s, k, v)
         return s
@@ -104,5 +108,10 @@ class Settings:
         """Thư mục chứa levelcore/web + game/web: cấu hình (Docker) hoặc chính repo (dev / test)."""
         return Path(self.web_root) if self.web_root else REPO
 
+    def game_web_dir(self) -> Path:
+        return Path(self.game_web) if self.game_web else self.web_root_dir() / "game" / "web"
+
     def is_admin(self, email: str) -> bool:
-        return not self.admins or email.lower() in self.admins
+        if self.admins:
+            return email.lower() in self.admins
+        return self.admins_open or self.dev

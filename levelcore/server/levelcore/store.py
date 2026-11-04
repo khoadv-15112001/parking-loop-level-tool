@@ -71,6 +71,13 @@ def parse_if_match(v: str | None) -> int | None:
     return int(m.group(1))
 
 
+IMPORT_STATUSES = ("created", "updated", "unchanged", "conflict", "waiting", "locked", "error")
+
+
+def _import_counts(items) -> dict:
+    return {k: sum(1 for it in items if it["status"] == k) for k in IMPORT_STATUSES}
+
+
 def _changes_detail(res) -> dict:
     return {"changes": res["changes"]} if res.get("changes") else {}
 
@@ -178,6 +185,8 @@ class Store:
             lv = self._level(c, pack, name)
         rev = rev if rev is not None else lv["head_rev"] + 1
         sha = self._put_blob(c, data) if data is not None else None
+        if data is not None and self.s.format_version is not None and "format" not in (meta or {}):
+            meta = {**(meta or {}), "format": self.s.format_version}
         c.execute("INSERT INTO revisions(level_id,rev,blob_sha,author,created_at,kind,message,unlocked_edit,meta)"
                   " VALUES(?,?,?,?,?,?,?,?,?)",
                   (lv["id"], rev, sha, user, now, kind, message or "", int(unlocked),
@@ -221,16 +230,18 @@ class Store:
         return obj
 
     def _rev_json(self, r, with_body=False, c=None):
+        meta = json.loads(r["meta"]) if r["meta"] else None
         out = {"rev": r["rev"], "author": r["author"], "created_at": iso(r["created_at"]), "kind": r["kind"],
                "message": r["message"], "unlocked_edit": bool(r["unlocked_edit"]), "sha": r["blob_sha"],
-               "meta": json.loads(r["meta"]) if r["meta"] else None}
+               "meta": meta, "format": (meta or {}).get("format")}
         if with_body:
             out["level"] = None if r["blob_sha"] is None else self._decode(self._blob(c, r["blob_sha"]))
         return out
 
     def _validate(self, pairs) -> list[dict]:
         """pairs [(số level, obj)] -> kết quả validator JS của game (GamePlugin.validator_module)."""
-        return validate_levels(self.s, [{"level": o, "levelNo": int(n)} for n, o in pairs])
+        return validate_levels(self.s, [{"level": o, "levelNo": int(n), "formatVersion": self.s.format_version}
+                                        for n, o in pairs])
 
     # ---------- pack ----------
     def ensure_default_packs(self):
@@ -480,9 +491,10 @@ class Store:
             if t["blob_sha"] is None:
                 raise ApiError(400, f"r{to_rev} là revision xoá, không revert về được")
             was_deleted = bool(lv["deleted"])
+            source_format = (json.loads(t["meta"]) if t["meta"] else {}).get("format")
             res = self._write_rev(c, pack, name, self._blob(c, t["blob_sha"]), user, "revert",
-                                  message or f"revert về r{to_rev}", unlocked=not mine, meta={"reverted_to": to_rev},
-                                  diff=True)
+                                  message or f"revert về r{to_rev}", unlocked=not mine,
+                                  meta={"reverted_to": to_rev, "format": source_format}, diff=True)
             self._audit(c, user, "level.revert", pack, name, res["rev"], reverted_to=to_rev, unlocked_edit=not mine,
                         **_changes_detail(res))
         out = {"pack": pack, "name": name, "rev": res["rev"], "sha": res["sha"], "reverted_to": to_rev,
@@ -722,44 +734,83 @@ class Store:
             entries = [(str(k), canon(v)) for k, v in data.items()]
         return entries, skipped
 
-    def import_levels(self, user, pack, body: bytes, content_type: str, folder=None, message=""):
+    def _import_status(self, c, pack, name, sha, user, force) -> tuple[str, dict]:
+        """Trạng thái của một level khi nhập, so với lần nhập trước (revision 'import' gần nhất = mốc đồng bộ):
+        created · updated · unchanged · conflict (tool và file cùng đổi từ mốc) · waiting (tool đã sửa, file còn bản
+        của mốc) · locked (người khác đang khoá). force: conflict / waiting thành updated."""
+        lv = self._level(c, pack, name)
+        alive = lv is not None and not lv["deleted"]
+        head = self._head(c, lv)["blob_sha"] if alive else None
+        if head == sha:
+            return "unchanged", {}
+        lk = self._lock(c, pack, name)
+        if lk and lk["holder"] != user:
+            return "locked", {"holder": lk["holder"]}
+        if not alive:
+            return "created", {}
+        base = c.execute("SELECT rev, blob_sha FROM revisions WHERE level_id=? AND kind='import' ORDER BY rev DESC LIMIT 1",
+                         (lv["id"],)).fetchone()
+        if force or (base is not None and base["blob_sha"] == head):
+            return "updated", {}
+        h = self._head(c, lv)
+        info = {"head_rev": lv["head_rev"], "author": h["author"], "base_rev": base and base["rev"]}
+        return ("waiting" if base is not None and base["blob_sha"] == sha else "conflict"), info
+
+    def import_levels(self, user, pack, body: bytes, content_type: str, folder=None, message="", dry_run=False,
+                      force=False):
+        """Nhập level từ zip / JSON. Mỗi level một trạng thái (IMPORT_STATUSES); chỉ created / updated được ghi, level đã
+        sửa trong tool không bị ghi đè trừ khi force. File lỗi (tên, JSON) báo riêng, không chặn các file khác.
+        dry_run: chỉ trả danh sách để xem trước."""
         c = self.db.conn()
         self._writable(c, pack)
         entries, skipped = self._read_import(body, content_type, folder)
         if not entries:
             raise ApiError(400, "Không có level nào để import", skipped=skipped)
-        prepared = []
+        errors, prepared = [], []
         for name, raw in entries:
-            self._check_name(name)
+            if not isinstance(name, str) or not NAME_RE.match(name):
+                errors.append({"name": str(name), "status": "error", "detail": "Tên level phải là số nguyên dương"})
+                continue
             try:
                 obj = self._decode(raw)
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
-                raise ApiError(400, f"{name}: không phải JSON ({e})")
+                errors.append({"name": name, "status": "error", "detail": f"Không phải JSON: {e}"})
+                continue
             if not isinstance(obj, dict):
-                raise ApiError(400, f"{name}: level phải là object")
-            prepared.append((name, canon(obj)))
-        stats = {"created": [], "updated": [], "unchanged": []}
-        with self.db.write() as c:
-            locked = []
-            for name, _ in prepared:
-                l = self._lock(c, pack, name)
-                if l and l["holder"] != user:
-                    locked.append({"level": name, "holder": l["holder"], "since": iso(l["since"])})
-            if locked:
-                raise ApiError(423, f"{len(locked)} level đang bị người khác khoá — không import gì", locked=locked)
-            for name, data in prepared:
-                lv = self._level(c, pack, name)
-                if lv is not None and not lv["deleted"] and \
-                        self._head(c, lv)["blob_sha"] == hashlib.sha256(data).hexdigest():
-                    stats["unchanged"].append(name)
-                    continue
-                res = self._write_rev(c, pack, name, data, user, "import", message, diff=True)
-                stats["created" if res["created"] else "updated"].append(name)
-            self._audit(c, user, "pack.import", pack, None, None, created=len(stats["created"]),
-                        updated=len(stats["updated"]), unchanged=len(stats["unchanged"]), skipped=len(skipped))
-        out = {"pack": pack, **{k: len(v) for k, v in stats.items()}, "skipped": skipped}
-        self.broker.publish("pack.imported", {"pack": pack, "author": user,
-                                              "changed": stats["created"] + stats["updated"]})
+                errors.append({"name": name, "status": "error", "detail": "Level phải là JSON object"})
+                continue
+            prepared.append((name, obj, canon(obj)))
+        checks = self._validate([(n, o) for n, o, _ in prepared])
+
+        def plan(c):
+            out = []
+            for (name, _, data), v in zip(prepared, checks):
+                status, info = self._import_status(c, pack, name, hashlib.sha256(data).hexdigest(), user, force)
+                item = {"name": name, "status": status, **info}
+                if not v["isValid"]:
+                    item["errors"] = v["errors"][:5]
+                out.append((item, data))
+            return out
+
+        if dry_run:
+            items = [it for it, _ in plan(c)] + errors
+        else:
+            with self.db.write() as c:
+                planned = plan(c)
+                for item, data in planned:
+                    if item["status"] in ("created", "updated"):
+                        res = self._write_rev(c, pack, item["name"], data, user, "import", message or "nhập từ file",
+                                              diff=True)
+                        item["rev"] = res["rev"]
+                items = [it for it, _ in planned] + errors
+                counts = _import_counts(items)
+                self._audit(c, user, "pack.import", pack, None, None, skipped=len(skipped), force=force,
+                            **{k: v for k, v in counts.items() if v})
+        items.sort(key=lambda it: (int(it["name"]) if it["name"].isdigit() else 0, it["name"]))
+        out = {"pack": pack, "dry_run": dry_run, **_import_counts(items), "items": items, "skipped": skipped}
+        if not dry_run:
+            self.broker.publish("pack.imported", {"pack": pack, "author": user,
+                                                  "changed": [it["name"] for it in items if "rev" in it]})
         return out
 
     def export_pack(self, pack) -> bytes:

@@ -27,6 +27,7 @@ export function shortUser(email) {
 
 /**
  * Mở hộp thoại. `html` = nội dung (đã esc). actions: [{label, primary?, danger?, onClick(dlg) → false để giữ hộp}].
+ * onOpen(dlg, close): close(v) đóng hộp với giá trị v (vd bấm một dòng trong bảng).
  * Trả Promise resolve giá trị trả về của action (hoặc null khi đóng).
  */
 export function openDialog({ title, html = '', actions = [{ label: 'Đóng' }], onOpen }) {
@@ -60,7 +61,7 @@ export function openDialog({ title, html = '', actions = [{ label: 'Đóng' }], 
     back.addEventListener('mousedown', e => { if (e.target === back) close(null); });
     document.addEventListener('keydown', onKey);
     $('#dialog-root').appendChild(back);
-    onOpen?.(dlg);
+    onOpen?.(dlg, close);
     ($('input, select, textarea', dlg) || $('button.primary', dlg))?.focus();
   });
 }

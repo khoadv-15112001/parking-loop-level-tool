@@ -27,6 +27,25 @@ Fork / cập nhật từ core / đóng góp ngược về core: [FORK.md](FORK.m
 | Deploy | `deploy/Dockerfile` cho BI Center (SBP_*), `deploy/docker-compose.yml` |
 | Vỏ app web | chọn bộ, danh sách, panel level (Tổng quan / JSON / Lịch sử), sửa / lưu / xung đột, các hộp thoại |
 
+## Hai cách khai game, hai server
+
+| | Game khai bằng manifest (game mới) | Plugin Python (game cũ) |
+| --- | --- | --- |
+| Khai báo | `game/manifest.json` + một module luật JS (`rules`) | `game/server/gameplugin` (`GamePlugin(...)`) + validator JS |
+| Server Python | có — hook JS chạy qua một tiến trình node thường trú | có |
+| Server Node (`levelcore/node`) | có — chưa có đăng nhập BI, Level Hub, bản WebGL | không |
+
+Hợp đồng chung của hai server, cách chạy test hợp đồng, bảng route và định dạng manifest:
+[`contracts/README.md`](contracts/README.md). Kế hoạch đang làm: [`docs/KE-HOACH-CORE.md`](docs/KE-HOACH-CORE.md); chạy game
+mẫu trên từng server và kịch bản kiểm tay: [`docs/SMOKE-DOT1.md`](docs/SMOKE-DOT1.md).
+
+Server Node: `node levelcore/node/server.mjs` (game ở `game/manifest.json` hoặc `LEVELCORE_GAME_MANIFEST`; cổng
+`<PREFIX>_PORT`, mặc định 8880; cùng biến môi trường `<PREFIX>_*` như bảng dưới). Server Python tự nạp `game/manifest.json`
+nếu có, không thì nạp plugin Python.
+
+Module web của game khai `fields: [{path, label, type: 'number' | 'text' | 'bool' | 'select', options?, min?, max?}]` thì
+core tự dựng form ở tab Tổng quan, chỉ ghi đúng field vừa sửa; `renderOverview` (nếu có) vẽ tiếp bên dưới.
+
 ## Plugin server — `game/server/gameplugin`
 
 Package `gameplugin` có biến `GAME = GamePlugin(...)` ([`server/levelcore/plugin.py`](server/levelcore/plugin.py)):
@@ -83,6 +102,7 @@ set <PREFIX>_DEV=1
 ```sh
 cd levelcore/server && ../../.venv/Scripts/python -m pytest   # core, với game mẫu tests/sample_game + template
 cd game/server && ../../.venv/Scripts/python -m pytest        # riêng game
+node levelcore/contracts/run.mjs                              # hợp đồng chung, chạy với server Python rồi Node
 ```
 
 ## Biến môi trường (`<PREFIX>_*`)
@@ -94,7 +114,7 @@ cd game/server && ../../.venv/Scripts/python -m pytest        # riêng game
 | `PUBLIC_BASE` | `SBP_TOOL_URL` hoặc `http://127.0.0.1:8880` | URL công khai (CSRF, cookie Secure) |
 | `GAME_DIR` | `$SBP_DATA_DIR/game` hoặc `data/game` | bản WebGL playtest |
 | `ALLOWLIST`, `ALLOWED_DOMAIN` | — / `sonat.vn` | ai được vào |
-| `ADMINS` | (rỗng = mọi người) | tải bản game, phá khoá, production / lưu trữ |
+| `ADMINS` | rỗng = mọi người (plugin Python), chỉ máy DEV (game manifest) | tải bản game, phá khoá, production / lưu trữ |
 | `LOCK_TTL`, `SSE_HEARTBEAT`, `NODE`, `CORS_ORIGINS`, `WEB_ROOT` | | |
 | `SESSION_SECRET` | ngẫu nhiên mỗi lần chạy | bắt buộc khi deploy |
 | `BI_ENV`, `BI_API_URL`, `BI_APP_ID`, `BI_APP_ID_IOS`, `BI_FIREBASE_API_KEY/_AUTH_DOMAIN/_PROJECT_ID/_APP_ID` | | BI Level Hub + đăng nhập Google |
@@ -110,6 +130,6 @@ Không tiền tố: `VL_SSO_SECRET`; BI Center: `SBP_SQLITE_PATH`, `SBP_TOOL_URL
 
 `/api/me` · `/api/packs` (GET, POST, PATCH `/{pack}`, POST `/{pack}/rename`) · `/api/packs/{pack}/levels[?include_deleted]` ·
 `/levels/{n}` GET / POST / PUT (`If-Match: "r<rev>"`) / DELETE · `/levels/{n}/revisions[/{rev}[/diff]]` · `/revert` ·
-`/relevel` (`swap` | `shift`, `dry_run`) · `/api/locks/…` · `/api/promote` · `/import` · `/export` · `/bundle` · `/validate` ·
+`/relevel` (`swap` | `shift`, `dry_run`) · `/api/locks/…` · `/api/promote` · `/import` (`dry_run`, `force`) · `/export` · `/bundle` · `/validate` ·
 `/levelhub/preflight|export|upload` · `/api/levelhub/options` · `/api/bi/*` · `/api/game*` · `/api/audit` · `/api/events` (SSE).
 Lỗi luôn là JSON `{"detail": …}`: 412 kèm head, 423 kèm người giữ khoá, 422 kèm lỗi kiểm định.

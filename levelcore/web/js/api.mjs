@@ -81,16 +81,18 @@ export const api = {
   unlock: (pack, name, force = false) =>
     request('DELETE', `/api/locks/packs/${enc(pack)}/levels/${enc(name)}${force ? '?force=1' : ''}`),
   promote: (from, to, items, message = '') => request('POST', '/api/promote', { json: { from, to, items, message } }),
-  importLevels: (pack, file) => request('POST', `/api/packs/${enc(pack)}/import`, {
-    body: file, headers: { 'Content-Type': file.type || (file.name?.endsWith('.zip') ? 'application/zip' : 'application/json') },
-  }),
+  /** Nhập file zip / JSON. dryRun: chỉ xem trước trạng thái từng level; force: ghi đè cả level đã sửa trong tool. */
+  importLevels: (pack, file, { dryRun = false, force = false } = {}) =>
+    request('POST', `/api/packs/${enc(pack)}/import?dry_run=${dryRun}&force=${force}`, {
+      body: file, headers: { 'Content-Type': file.type || (file.name?.endsWith('.zip') ? 'application/zip' : 'application/json') },
+    }),
   exportPack: pack => request('GET', `/api/packs/${enc(pack)}/export`, { raw: true }),
   levelhubOptions: () => request('GET', '/api/levelhub/options'),
   levelhubPreflight: (pack, body) => request('POST', `/api/packs/${enc(pack)}/levelhub/preflight`, { json: body }),
   levelhubExport: (pack, body) => request('POST', `/api/packs/${enc(pack)}/levelhub/export`, { json: body, raw: true }),
   audit: (params = {}) => request('GET', `/api/audit?${new URLSearchParams(params)}`),
-  importJson: (pack, obj, message = '') =>
-    request('POST', `/api/packs/${enc(pack)}/import?message=${enc(message)}`, { json: obj }),
+  importJson: (pack, obj, message = '', { force = false } = {}) =>
+    request('POST', `/api/packs/${enc(pack)}/import?message=${enc(message)}&force=${force}`, { json: obj }),
 
   // ----- đăng nhập + BI Level Hub (token BI trong X-BI-Token, server chỉ chuyển tiếp) -----
   authStatus: () => request('GET', '/auth/status'),

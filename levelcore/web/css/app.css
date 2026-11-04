@@ -103,6 +103,8 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .form-grid label { display: grid; gap: 2px; font-size: 12px; color: var(--lc-muted); }
 .form-grid label.check { display: flex; align-items: center; gap: 6px; color: var(--lc-text); font-size: 14px; }
 .form-grid input:not([type="checkbox"]), .form-grid select { width: 100%; color: var(--lc-text); }
+.dock-off { padding: 16px; }
+.dialog td button { padding: 1px 8px; }
 .validation { display: grid; gap: 4px; font-size: 13px; }
 .validation .err::before { content: "✗ "; }
 .validation .warn::before { content: "! "; }

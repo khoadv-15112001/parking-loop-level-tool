@@ -82,7 +82,7 @@ export async function syncHubPack(g, packs, onProgress = () => {}) {
       }));
       onProgress(Math.min(i + j + 5, files.length), files.length);
     }
-    const r = await api.importJson(pack, { levels }, `Level Hub: ${groupName(g)}`);
+    const r = await api.importJson(pack, { levels }, `Level Hub: ${groupName(g)}`, { force: true });   // bộ riêng = bản sao của BI
     for (const k of ['created', 'updated', 'unchanged']) out[k] += r[k] || 0;
   }
   return out;
@@ -228,12 +228,14 @@ export async function openLevelHubBrowser(pack, readOnly, onImported, onOpenPack
         const g = groups.find(x => String(groupId(x)) === $('#lhb-group', dlg).value);
         const ns = chosen.map(fileLevel).sort((a, b) => a - b);
         if (!(await confirmDialog('Nhập từ Level Hub?', `Bộ đích: ${pack}. Bộ Level Hub: ${groupName(g)}. ${ns.length} level `
-          + `(${ns.slice(0, 30).join(', ')}${ns.length > 30 ? '…' : ''}). Level cùng số đã có sẽ được cập nhật bằng revision mới; `
-          + 'lịch sử không bị xoá, nội dung giống hệt thì giữ nguyên.', 'Nhập'))) return false;
+          + `(${ns.slice(0, 30).join(', ')}${ns.length > 30 ? '…' : ''}). Level cùng số chưa sửa trong tool được cập nhật bằng `
+          + 'revision mới; level đã sửa trong tool hoặc đang có người khoá thì giữ nguyên.', 'Nhập'))) return false;
         const levels = {};
         for (const f of chosen) levels[fileLevel(f)] = await api.biFileRaw(login.token, groupId(g), fileId(f));
         const r = await api.importJson(pack, { levels }, `Level Hub: ${groupName(g)}`);
-        toast(`Đã nhập từ Level Hub vào ${pack}: ${r.created} mới, ${r.updated} cập nhật, ${r.unchanged} giữ nguyên`, 'ok');
+        const kept = (r.conflict || 0) + (r.waiting || 0) + (r.locked || 0);
+        toast(`Đã nhập từ Level Hub vào ${pack}: ${r.created} mới, ${r.updated} cập nhật, ${r.unchanged} giữ nguyên`
+          + (kept ? `, ${kept} level đã sửa trong tool hoặc đang khoá nên không ghi` : ''), kept ? '' : 'ok');
         await onImported?.();
         return true;
       },

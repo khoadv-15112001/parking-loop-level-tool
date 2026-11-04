@@ -1,0 +1,11 @@
+{
+  "tool": "SampleLevel",
+  "game": "Sample",
+  "prefix": "SAMPLELEVEL",
+  "formatVersion": 1,
+  "rules": "web/rules.mjs",
+  "web": "web",
+  "defaultPacks": ["develop", "product"],
+  "biAppId": "com.sample.game",
+  "levelhub": { "acronym": "Sample", "obstacleCodes": [["Rock", "RK"]] }
+}

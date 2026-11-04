@@ -42,6 +42,8 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
     async def lifespan(_app):
         yield
         db.close()
+        if game.rules is not None:
+            game.rules.close()
 
     docs = {} if s.dev else {"docs_url": None, "redoc_url": None, "openapi_url": None}
     app = FastAPI(title=f"{s.tool_name} sync server", version="0.1", lifespan=lifespan, **docs)
@@ -96,7 +98,8 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
     @api.get("/me")
     def me(user: str = Depends(current_user)):
         return {"email": user, "dev": s.dev, "lock_ttl": s.lock_ttl, "online": broker.online(),
-                "admin": s.is_admin(user)}
+                "admin": s.is_admin(user), "runtime": "python", "format_version": s.format_version,
+                "features": {"levelhub": game.levelhub is not None, "bi": bihub.configured(s), "webgame": True}}
 
     # ----- pack -----
     @api.get("/packs")
@@ -211,11 +214,11 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
 
     # ----- import / export -----
     @api.post("/packs/{pack}/import")
-    async def import_(pack: str, request: Request, folder: str | None = None, message: str = "",
-                      user: str = Depends(current_user)):
+    async def import_(pack: str, request: Request, folder: str | None = None, message: str = "", dry_run: bool = False,
+                      force: bool = False, user: str = Depends(current_user)):
         body = await request.body()
         return await run_in_threadpool(store.import_levels, user, pack, body, request.headers.get("content-type", ""),
-                                       folder, message)
+                                       folder, message, dry_run, force)
 
     @api.get("/packs/{pack}/export")
     def export(pack: str):
@@ -421,7 +424,7 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
         from fastapi.staticfiles import StaticFiles
 
         # trước /app; repo core không có game/ (check_dir=False: chỉ 404)
-        app.mount("/app/game", StaticFiles(directory=web / "game" / "web", check_dir=False), name="web-game")
+        app.mount("/app/game", StaticFiles(directory=s.game_web_dir(), check_dir=False), name="web-game")
         app.mount("/app", StaticFiles(directory=web / "levelcore" / "web", html=True), name="web-app")
 
         @app.middleware("http")
