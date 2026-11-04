@@ -33,11 +33,12 @@ Fork / cập nhật từ core / đóng góp ngược về core: [FORK.md](FORK.m
 | --- | --- | --- |
 | Khai báo | `game/manifest.json` + một module luật JS (`rules`) | `game/server/gameplugin` (`GamePlugin(...)`) + validator JS |
 | Server Python | có — hook JS chạy qua một tiến trình node thường trú | có |
-| Server Node (`levelcore/node`) | có — chưa có đăng nhập BI, Level Hub, bản WebGL | không |
+| Server Node (`levelcore/node`) | có — đủ route như server Python | không |
+| Giao diện | vỏ của core, hoặc giao diện riêng của game (`"app"` trong manifest) dùng module của core ở `/core/` | vỏ của core |
 
-Hợp đồng chung của hai server, cách chạy test hợp đồng, bảng route và định dạng manifest:
+Hợp đồng chung của hai server, cách chạy test hợp đồng, bảng route, định dạng manifest, snapshot Level Hub và CI:
 [`contracts/README.md`](contracts/README.md). Kế hoạch đang làm: [`docs/KE-HOACH-CORE.md`](docs/KE-HOACH-CORE.md); chạy game
-mẫu trên từng server và kịch bản kiểm tay: [`docs/SMOKE-DOT1.md`](docs/SMOKE-DOT1.md).
+mẫu trên từng server và kịch bản kiểm tay: [`docs/SMOKE-DOT1.md`](docs/SMOKE-DOT1.md), [`docs/SMOKE-DOT2.md`](docs/SMOKE-DOT2.md).
 
 Server Node: `node levelcore/node/server.mjs` (game ở `game/manifest.json` hoặc `LEVELCORE_GAME_MANIFEST`; cổng
 `<PREFIX>_PORT`, mặc định 8880; cùng biến môi trường `<PREFIX>_*` như bảng dưới). Server Python tự nạp `game/manifest.json`
@@ -103,6 +104,7 @@ set <PREFIX>_DEV=1
 cd levelcore/server && ../../.venv/Scripts/python -m pytest   # core, với game mẫu tests/sample_game + template
 cd game/server && ../../.venv/Scripts/python -m pytest        # riêng game
 node levelcore/contracts/run.mjs                              # hợp đồng chung, chạy với server Python rồi Node
+node --test levelcore/node/tests/*.test.mjs                   # riêng server Node
 ```
 
 ## Biến môi trường (`<PREFIX>_*`)
@@ -117,6 +119,7 @@ node levelcore/contracts/run.mjs                              # hợp đồng ch
 | `ADMINS` | rỗng = mọi người (plugin Python), chỉ máy DEV (game manifest) | tải bản game, phá khoá, production / lưu trữ |
 | `LOCK_TTL`, `SSE_HEARTBEAT`, `NODE`, `CORS_ORIGINS`, `WEB_ROOT` | | |
 | `SESSION_SECRET` | ngẫu nhiên mỗi lần chạy | bắt buộc khi deploy |
+| `CI_TOKEN`, `CI_BRANCH`, `CI_PACK` | tắt / mọi nhánh / bộ mặc định đầu | nhận player + level từ Jenkins (hợp đồng CI v1) |
 | `BI_ENV`, `BI_API_URL`, `BI_APP_ID`, `BI_APP_ID_IOS`, `BI_FIREBASE_API_KEY/_AUTH_DOMAIN/_PROJECT_ID/_APP_ID` | | BI Level Hub + đăng nhập Google |
 
 Không tiền tố: `VL_SSO_SECRET`; BI Center: `SBP_SQLITE_PATH`, `SBP_TOOL_URL`, `SBP_DATA_DIR`, `SBP_VERSION`.
@@ -131,5 +134,6 @@ Không tiền tố: `VL_SSO_SECRET`; BI Center: `SBP_SQLITE_PATH`, `SBP_TOOL_URL
 `/api/me` · `/api/packs` (GET, POST, PATCH `/{pack}`, POST `/{pack}/rename`) · `/api/packs/{pack}/levels[?include_deleted]` ·
 `/levels/{n}` GET / POST / PUT (`If-Match: "r<rev>"`) / DELETE · `/levels/{n}/revisions[/{rev}[/diff]]` · `/revert` ·
 `/relevel` (`swap` | `shift`, `dry_run`) · `/api/locks/…` · `/api/promote` · `/import` (`dry_run`, `force`) · `/export` · `/bundle` · `/validate` ·
-`/levelhub/preflight|export|upload` · `/api/levelhub/options` · `/api/bi/*` · `/api/game*` · `/api/audit` · `/api/events` (SSE).
+`/levelhub/preflight|export|upload` (`snapshot`) · `/api/levelhub/options` · `/api/bi/*` · `/api/game*` · `/api/game/builds` ·
+`/api/ci/status|levels|webgl` (token CI) · `/api/audit` · `/api/events` (SSE).
 Lỗi luôn là JSON `{"detail": …}`: 412 kèm head, 423 kèm người giữ khoá, 422 kèm lỗi kiểm định.

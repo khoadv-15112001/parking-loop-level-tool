@@ -20,6 +20,9 @@ env:
   __PREFIX___BI_FIREBASE_APP_ID: {required: true, description: Firebase web config of BI (public)}
   __PREFIX___ADMINS: {description: 'Admin emails, comma separated: upload the WebGL game, production / archive flags, break locks. Empty = everyone'}
   __PREFIX___ALLOWED_DOMAIN: {description: 'Email domain allowed in (default sonat.vn)'}
+  __PREFIX___CI_TOKEN: {secret: true, description: 'Token Jenkins sends with the WebGL player and level data (only /api/ci/*); empty = CI off'}
+  __PREFIX___CI_BRANCH: {description: 'Branch whose CI builds become the current player; other branches wait for an admin. Empty = every build'}
+  __PREFIX___CI_PACK: {description: 'Pack that receives CI levels; empty = the first default pack'}
 
 components:
   - name: server

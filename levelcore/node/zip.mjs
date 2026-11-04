@@ -1,4 +1,9 @@
-// Zip trong bộ nhớ cho nhập / xuất bộ level (chép từ sand-jam-level-tool server/zip.mjs).
+// Zip cho nhập / xuất bộ level (trong bộ nhớ) và bản WebGL (đọc từ file, không nạp cả zip) — chép từ
+// sand-jam-level-tool server/zip.mjs.
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import zlib from 'node:zlib';
 
 const LOCAL_SIGNATURE = 0x04034b50;
@@ -117,4 +122,83 @@ export function readZip(buffer, { maxTotalBytes = 512 * 1024 * 1024 } = {}) {
     entries.push({ name, data });
   }
   return entries;
+}
+
+async function readAt(handle, position, length) {
+  const buffer = Buffer.alloc(length);
+  const { bytesRead } = await handle.read(buffer, 0, length, position);
+  return buffer.subarray(0, bytesRead);
+}
+
+// Reads the central directory of a zip on disk without loading the file, so a several-hundred-MB
+// web build can be checked and unpacked with memory bounded by the stream buffers.
+export async function listZipFile(file) {
+  const handle = await fsp.open(file, 'r');
+  try {
+    const { size } = await handle.stat();
+    const tailLength = Math.min(size, 22 + 65535);
+    const tail = await readAt(handle, size - tailLength, tailLength);
+    let end = -1;
+    for (let i = tail.length - 22; i >= 0; i--) {
+      if (tail.readUInt32LE(i) === END_SIGNATURE) {
+        end = i;
+        break;
+      }
+    }
+    if (end < 0) throw new Error('File không phải zip');
+    const count = tail.readUInt16LE(end + 10);
+    const centralSize = tail.readUInt32LE(end + 12);
+    const centralOffset = tail.readUInt32LE(end + 16);
+    if (count > MAX_ENTRIES) throw new Error('Zip có quá nhiều file');
+    const central = await readAt(handle, centralOffset, centralSize);
+    const entries = [];
+    let cursor = 0;
+    for (let n = 0; n < count; n++) {
+      if (central.readUInt32LE(cursor) !== CENTRAL_SIGNATURE) throw new Error('Zip hỏng (central directory)');
+      const nameLength = central.readUInt16LE(cursor + 28);
+      const entry = {
+        method: central.readUInt16LE(cursor + 10),
+        crc: central.readUInt32LE(cursor + 16),
+        compressedSize: central.readUInt32LE(cursor + 20),
+        size: central.readUInt32LE(cursor + 24),
+        localOffset: central.readUInt32LE(cursor + 42),
+        name: central.toString('utf8', cursor + 46, cursor + 46 + nameLength),
+      };
+      cursor += 46 + nameLength + central.readUInt16LE(cursor + 30) + central.readUInt16LE(cursor + 32);
+      if (entry.name.endsWith('/')) continue;
+      if (entry.name.startsWith('/') || entry.name.split(/[\\/]/).includes('..')) throw new Error(`Tên file không an toàn trong zip: ${entry.name}`);
+      if (entry.method !== 0 && entry.method !== 8) throw new Error(`Zip dùng kiểu nén không hỗ trợ (${entry.method}) ở ${entry.name}`);
+      entries.push(entry);
+    }
+    return entries;
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function extractZipEntry(file, entry, target) {
+  const handle = await fsp.open(file, 'r');
+  let start;
+  try {
+    const local = await readAt(handle, entry.localOffset, 30);
+    if (local.length < 30 || local.readUInt32LE(0) !== LOCAL_SIGNATURE) throw new Error(`Zip hỏng (${entry.name})`);
+    start = entry.localOffset + 30 + local.readUInt16LE(26) + local.readUInt16LE(28);
+  } finally {
+    await handle.close();
+  }
+  let crc = 0;
+  let size = 0;
+  const check = new Transform({
+    transform(chunk, _encoding, done) {
+      crc = zlib.crc32(chunk, crc);
+      size += chunk.length;
+      done(null, chunk);
+    },
+  });
+  const source = fs.createReadStream(file, { start, end: start + entry.compressedSize - 1 });
+  const stages = entry.compressedSize === 0 ? [] : [source];
+  if (entry.method === 8 && stages.length) stages.push(zlib.createInflateRaw());
+  if (stages.length) await pipeline(...stages, check, fs.createWriteStream(target));
+  else fs.writeFileSync(target, Buffer.alloc(0));
+  if (size !== entry.size || (crc >>> 0) !== entry.crc) throw new Error(`Zip hỏng: ${entry.name} sai CRC`);
 }

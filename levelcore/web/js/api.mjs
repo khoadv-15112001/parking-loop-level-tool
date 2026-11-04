@@ -1,7 +1,13 @@
 // Client REST của server tool level (cùng origin). DEV: header X-Dev-User; production: cookie vl_sso tự đi kèm.
-import game from '../game/game.mjs';
+// Giao diện riêng của game import thẳng từ /core/js/api.mjs; gọi setStoragePrefix trước khi đăng nhập.
+let storagePrefix = 'leveltool';
 
-const DEV_KEY = `${game.storagePrefix}.devUser`;
+export function setStoragePrefix(prefix) {
+  storagePrefix = prefix || storagePrefix;
+}
+
+const DEV_KEY = () => `${storagePrefix}.devUser`;
+const TOKEN_KEY = () => `${storagePrefix}.token`;
 
 export class ApiError extends Error {
   constructor(status, body) {
@@ -12,15 +18,14 @@ export class ApiError extends Error {
 }
 
 export const devUser = {
-  get: () => { try { return localStorage.getItem(DEV_KEY) || ''; } catch { return ''; } },
-  set: v => { try { v ? localStorage.setItem(DEV_KEY, v) : localStorage.removeItem(DEV_KEY); } catch { /* bỏ qua */ } },
+  get: () => { try { return localStorage.getItem(DEV_KEY()) || ''; } catch { return ''; } },
+  set: v => { try { v ? localStorage.setItem(DEV_KEY(), v) : localStorage.removeItem(DEV_KEY()); } catch { /* bỏ qua */ } },
 };
 
 // Phiên của tool sau khi đăng nhập Google của BI (POST /auth/firebase) — gửi kèm Authorization: Bearer.
-const TOKEN_KEY = `${game.storagePrefix}.token`;
 export const session = {
-  get: () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } },
-  set: v => { try { v ? localStorage.setItem(TOKEN_KEY, v) : localStorage.removeItem(TOKEN_KEY); } catch { /* bỏ qua */ } },
+  get: () => { try { return localStorage.getItem(TOKEN_KEY()) || ''; } catch { return ''; } },
+  set: v => { try { v ? localStorage.setItem(TOKEN_KEY(), v) : localStorage.removeItem(TOKEN_KEY()); } catch { /* bỏ qua */ } },
 };
 
 export function authHeaders() {
@@ -109,6 +114,9 @@ export const api = {
   biFileRaw: (token, id, fileId) =>
     request('GET', `/api/bi/asset-groups/${enc(id)}/files/${enc(fileId)}/raw`, { headers: { 'X-BI-Token': token } }),
   gameInfo: () => request('GET', '/api/game'),
+  gameBuilds: () => request('GET', '/api/game/builds'),
+  activateBuild: id => request('POST', `/api/game/builds/${enc(id)}/activate`),
+  removeBuild: id => request('DELETE', `/api/game/builds/${enc(id)}`),
   /** Tải zip bản game theo từng phần (proxy của link công ty giới hạn cỡ mỗi request); onProgress(phần xong, tổng phần). */
   gameUpload: async (file, onProgress = () => {}) => {
     const up = await request('POST', '/api/game/uploads', { json: { size: file.size, name: file.name || '' } });

@@ -27,4 +27,5 @@ Mở `http://localhost:<cổng>/app/`, vào bằng email DEV.
 6. Kiểm định bộ: bấm số level trong bảng lỗi thì mở đúng level đó.
 7. Lịch sử: khôi phục một bản cũ, xoá level rồi khôi phục ở bộ lọc "Đã xoá".
 
-Server Node chưa có Level Hub và chơi thử WebGL: nút tương ứng phải ẩn, khung game hiện dòng báo chưa có.
+Chưa có bản game trên server thì khung game hiện dòng báo chưa có và nút ⬆ Bản game. Phần BI, Level Hub, bản game, CI:
+[`SMOKE-DOT2.md`](SMOKE-DOT2.md).

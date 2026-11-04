@@ -1,7 +1,7 @@
 // Vỏ app web của level-tool-core (chung mọi game; phần riêng của game ở ../game/game.mjs — xem levelcore/README.md).
 // Bố cục như FishLevel: chọn bộ → danh sách level → panel level (Tổng quan / JSON / Lịch sử), khoá khi sửa, lưu theo If-Match (412 → so sánh),
 // realtime qua SSE, nhập / xuất zip, kiểm định cả bộ, promote sang bộ production, xuất Level Hub.
-import { api, ApiError, devUser, downloadBlob, downloadResponse, session } from './api.mjs';
+import { api, ApiError, devUser, downloadBlob, downloadResponse, session, setStoragePrefix } from './api.mjs';
 import { biSessionLogin } from './biauth.mjs';
 import {
   groupId, groupName, hubIdOf, hubOptionText, listHubGroups, openLevelHubBrowser, syncHubPack, uploadToBi,
@@ -9,10 +9,11 @@ import {
 import { diffPaths, renderFields } from './fields.mjs';
 import { parseLevelQuery, queryMatches } from './query.mjs';
 import { $, $$, confirmDialog, esc, fmtTime, openDialog, shortUser, toast } from './ui.mjs';
-import { highlight as gameHighlight, isPreviewing, mountDock, refreshPreview, showLevel } from './webgame.mjs';
+import { highlight as gameHighlight, isPreviewing, mountDock, onBuildEvent, refreshPreview, showLevel } from './webgame.mjs';
 import * as sync from './sync.mjs';
 import game from '../game/game.mjs';
 
+setStoragePrefix(game.storagePrefix);
 const PACK_KEY = `${game.storagePrefix}.pack`;
 const THEME_KEY = `${game.storagePrefix}.theme`;
 
@@ -586,6 +587,13 @@ async function showInGame(mode = 'preview') {
   await showLevel(pack, state.sel, clone(state.draft), mode);   // chỉ level này — không tải cả bộ
 }
 
+/** ▶ Chơi rN (Lịch sử): chơi đúng revision đã chọn để tái hiện lỗi, bản đang mở giữ nguyên. */
+async function playRevision(rev) {
+  const r = await api.revision(state.pack, state.sel, rev);
+  if (!r.level) return toast(`r${rev} là bản xoá, không có nội dung để chơi`, 'err');
+  await showLevel(state.pack, state.sel, r.level, 'play', `r${rev}`);
+}
+
 async function promote() {
   const targets = state.packs.filter(p => p.name !== state.pack && !p.archived);
   const def = targets.find(p => p.production)?.name || targets[0]?.name;
@@ -646,6 +654,7 @@ async function renderHistory() {
       ${r.message ? `· <i>${esc(r.message)}</i>` : ''}${r.unlocked_edit ? ' <span class="badge warn">sửa không khoá</span>' : ''}
       ${r.sha && r.rev !== state.cur.rev && !packReadOnly() ? `<button data-revert="${esc(r.rev)}">Khôi phục bản này</button>` : ''}
       ${r.sha ? `<button data-view="${esc(r.rev)}">Xem JSON</button>` : ''}
+      ${r.sha && features().webgame ? `<button data-play="${esc(r.rev)}" title="Chơi đúng bản này bằng game thật (bản đang mở giữ nguyên)">▶ Chơi r${esc(r.rev)}</button>` : ''}
       ${r.changes?.length ? `<ul class="changes">${r.changes.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}</li>`).join('');
   for (const b of $$('[data-revert]', ul)) {
     b.addEventListener('click', async () => {
@@ -660,6 +669,9 @@ async function renderHistory() {
         toast(e.message, 'err');
       }
     });
+  }
+  for (const b of $$('[data-play]', ul)) {
+    b.addEventListener('click', () => playRevision(Number(b.dataset.play)).catch(e => toast(e.message, 'err')));
   }
   for (const b of $$('[data-view]', ul)) {
     b.addEventListener('click', async () => {
@@ -817,8 +829,17 @@ async function levelHub() {
     team: $('#lh-team', dlg).value, why: $('#lh-why', dlg).value, geo: $('#lh-geo', dlg).value ? [$('#lh-geo', dlg).value] : [],
     designer: $('#lh-designer', dlg).value, version: $('#lh-ver', dlg).value, allow_missing: $('#lh-missing', dlg).checked,
   });
+  // Kiểm tra chốt snapshot (revision từng level); Xuất / Đẩy với cùng tham số dùng đúng các bản đó dù có người sửa sau.
+  let checked = null;
+  const withSnapshot = dlg => {
+    const b = body(dlg);
+    if (checked && checked.key === JSON.stringify(b)) b.snapshot = checked.snapshot;
+    return b;
+  };
   const report = (dlg, r) => {
-    $('#lh-report', dlg).innerHTML = `<p><b>${esc(r.zipName)}</b> · ${esc(r.levelCount)} level`
+    if (r.snapshot) checked = { key: JSON.stringify(body(dlg)), snapshot: r.snapshot, at: new Date() };
+    $('#lh-report', dlg).innerHTML = `${r.snapshot ? `<p class="muted">Đã chốt ${esc(r.snapshot.length)} level lúc ${esc(checked.at.toLocaleTimeString('vi-VN'))}: Xuất / Đẩy dùng đúng các bản này (đổi tham số thì kiểm tra lại).</p>` : ''}`
+      + `<p><b>${esc(r.zipName)}</b> · ${esc(r.levelCount)} level`
       + `${r.missingTotal ? ` · <span class="warn">thiếu ${esc(r.missingTotal)}: ${esc(r.missing.slice(0, 30).join(', '))}</span>` : ''}</p>`
       + (r.errors.length ? `<p class="err">${r.errors.map(e => `Level ${esc(e.level)}: ${esc(e.errors[0])}`).join('<br>')}</p>` : '')
       + `<table><tr><th>Lv</th><th>Mech</th><th>Diff</th><th>Time</th><th>Props</th><th>Obstacle</th></tr>${r.rows.slice(0, 200).map(x =>
@@ -827,7 +848,7 @@ async function levelHub() {
   const biAction = state.bi?.configured ? [{
     label: `⬆ Đẩy lên BI (${state.bi.env})`, onClick: async dlg => {
       try {
-        await uploadToBi(state.pack, { ...body(dlg), description: $('#lh-desc', dlg).value.trim() }, $('#lh-report', dlg));
+        await uploadToBi(state.pack, { ...withSnapshot(dlg), description: $('#lh-desc', dlg).value.trim() }, $('#lh-report', dlg));
       } catch (e) {
         if (e.status === 422 && e.body.report) report(dlg, e.body.report);
         $('#lh-report', dlg).insertAdjacentHTML('afterbegin', `<p class="err">${esc(e.message)}</p>`);
@@ -844,7 +865,7 @@ async function levelHub() {
       {
         label: 'Xuất zip', primary: true, onClick: async dlg => {
           try {
-            await downloadResponse(await api.levelhubExport(state.pack, body(dlg)), 'levelhub.zip');
+            await downloadResponse(await api.levelhubExport(state.pack, withSnapshot(dlg)), 'levelhub.zip');
             toast('Đã xuất gói Level Hub', 'ok');
           } catch (e) {
             if (e.status === 422 && e.body.report) {
@@ -895,6 +916,10 @@ function onEvent(type, d) {
   if (type === 'presence') {
     $('#online').textContent = d.online ? `${d.online.length} online` : '';
     $('#online').title = (d.online || []).join('\n');
+    return;
+  }
+  if (type === 'game.build') {
+    if (features().webgame) onBuildEvent(d, d.author === state.me.email);
     return;
   }
   if (type.startsWith('pack.') && type !== 'pack.imported') {

@@ -256,7 +256,9 @@ export async function uploadToBi(pack, body, reportEl) {
   const res = await api.levelhubUpload(pack, body, login.token);
   const id = res.group && groupId(res.group);
   reportEl.innerHTML = `<p class="ok">Đã gửi bộ <b>${esc(res.name)}</b> (${esc(res.levelCount)} level) lên BI. `
-    + 'BI đang xử lý (chờ Unity CI dựng bundle — PROCESSING lâu là bình thường).</p>';
+    + 'BI đang xử lý (chờ Unity CI dựng bundle — PROCESSING lâu là bình thường).</p>'
+    + (res.recovered ? '<p class="warn">BI không trả lời lúc tạo bộ, nhưng đã thấy bộ này trên BI — không cần đẩy lại.</p>' : '')
+    + (res.newer?.length ? `<p class="muted">Level ${esc(res.newer.join(', '))} đã được sửa sau khi kiểm tra; gói dùng bản đã kiểm tra.</p>` : '');
   toast(`Đã đẩy ${res.name} lên BI Level Hub`, 'ok');
   if (!id) return res;
   for (let i = 0; i < 12; i++) {   // theo dõi ~1 phút

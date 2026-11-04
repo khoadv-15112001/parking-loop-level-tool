@@ -49,9 +49,15 @@ class Settings:
     bi_firebase_app_id: str = ""
     # Bản game WebGL playtest phục vụ ở /game/ để xem / chơi thử level đang sửa
     game_dir: str = str(DATA / "game")
-    version: str = "dev"                   # SBP_VERSION trên BI Center = tag phát hành
+    # Nhận player và level từ Jenkins (hợp đồng CI v1): token riêng của route /api/ci/*, nhánh tự lên bản đang dùng
+    # (rỗng = mọi nhánh), bộ nhận level CI (rỗng = bộ mặc định đầu tiên).
+    ci_token: str = ""
+    ci_branch: str = ""
+    ci_pack: str = ""
+    version: str = "dev"                 # SBP_VERSION trên BI Center = tag phát hành
     format_version: int | None = None      # GamePlugin.format_version: ghi vào revision mới, đưa cho validator
     game_web: str = ""                     # GamePlugin.web_dir: module web của game (rỗng = <web_root>/game/web)
+    game_app: str = ""                     # GamePlugin.app_dir: giao diện riêng của game ở /app/ (rỗng = vỏ của core)
 
     @classmethod
     def for_game(cls, game, **kw) -> "Settings":
@@ -60,7 +66,7 @@ class Settings:
                 db_path=str(DATA / f"{game.tool_name.lower()}.db"),
                 validator_module=str(REPO / game.validator_module), default_packs=list(game.default_packs),
                 bi_app_id=game.bi_app_id, admins_open=not game.from_manifest_file,
-                format_version=game.format_version, game_web=game.web_dir)
+                format_version=game.format_version, game_web=game.web_dir, game_app=game.app_dir)
         for k, v in kw.items():
             setattr(s, k, v)
         return s
@@ -96,6 +102,9 @@ class Settings:
         s.bi_firebase_app_id = e("BI_FIREBASE_APP_ID", "")
         s.version = sbp("SBP_VERSION") or s.version
         s.game_dir = e("GAME_DIR") or (str(Path(data_dir) / "game") if data_dir else s.game_dir)
+        s.ci_token = e("CI_TOKEN", "").strip()
+        s.ci_branch = e("CI_BRANCH", "").strip()
+        s.ci_pack = e("CI_PACK", "").strip()
         if e("CORS_ORIGINS"):
             s.cors_origins = [o.strip() for o in e("CORS_ORIGINS").split(",") if o.strip()]
         return s

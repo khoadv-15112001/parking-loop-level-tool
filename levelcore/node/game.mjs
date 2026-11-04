@@ -25,7 +25,16 @@ export async function loadGame(manifestPath, repo) {
     manifest: m,
     rulesPath,
     webDir: m.web ? path.resolve(base, m.web) : path.join(repo, 'game', 'web'),
-    hasLevelhub: !!m.levelhub,
+    appDir: m.app ? path.resolve(base, m.app) : null,
+    levelhub: m.levelhub ? { acronym: m.levelhub.acronym, obstacleCodes: m.levelhub.obstacleCodes || [] } : null,
+    describeHub(level, n) {
+      const v = hook('describeHub')?.(level, n);
+      return isObject(v) ? v : {};
+    },
+    hubLayout(level) {
+      const fn = hook('hubLayout');
+      return fn ? String(fn(level) ?? '') : '';
+    },
     validate(level, levelNo, formatVersion) {
       try {
         return rules.validateLevel(level, { levelNo, formatVersion });

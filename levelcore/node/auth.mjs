@@ -42,8 +42,9 @@ export function cookieOf(req, name) {
 }
 
 export class Auth {
-  constructor(s) {
+  constructor(s, biConfigured = false) {
     this.s = s;
+    this.biConfigured = biConfigured;
     this.key = s.sessionSecret ? Buffer.from(s.sessionSecret) : crypto.randomBytes(32);
     this.allow = new Set();
     this.allowMtime = null;
@@ -76,12 +77,25 @@ export class Auth {
     return cookieOf(req, COOKIE_NAME);
   }
 
+  issue(email) {
+    return signSession(email, this.key);
+  }
+
+  /** Trang đăng nhập Google của BI; chưa cấu hình BI thì null (chỉ vào được bằng DEV). */
+  loginUrl(next) {
+    return this.biConfigured ? `${this.s.publicBase}/bi/login?next=${encodeURIComponent(next)}` : null;
+  }
+
   identify(req, url) {
     let email = null;
     if (this.s.dev) email = String(req.headers['x-dev-user'] || url.searchParams.get('dev_user') || '').trim().toLowerCase() || null;
     if (!email) {
       email = verifySession(this.tokenOf(req), this.key);
-      if (!email) throw new ApiError(401, 'Chưa đăng nhập hoặc phiên đã hết hạn', { login_url: null, bi_login: false, dev: this.s.dev });
+      if (!email) {
+        throw new ApiError(401, 'Chưa đăng nhập hoặc phiên đã hết hạn', {
+          login_url: this.loginUrl(`${this.s.publicBase}/app/`), bi_login: this.biConfigured, dev: this.s.dev,
+        });
+      }
     }
     this.requireAllowed(email);
     return email;

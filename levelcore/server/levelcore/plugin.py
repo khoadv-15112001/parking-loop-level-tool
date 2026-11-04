@@ -60,6 +60,7 @@ class GamePlugin:
     # ── game khai bằng manifest ──
     format_version: int | None = None    # ghi vào mỗi revision mới (revisions.meta.format); None = không ghi
     web_dir: str = ""                    # thư mục module web của game; rỗng = game/web của repo
+    app_dir: str = ""                    # giao diện riêng của game thay vỏ của core ở /app/; rỗng = vỏ của core
     rules: Any = None                    # JsRules chạy module luật JS (from_manifest); None = plugin Python
     from_manifest_file: bool = False     # game mới: <PREFIX>_ADMINS rỗng không cấp quyền admin cho ai
 
@@ -109,4 +110,5 @@ class GamePlugin:
                    level_summary=level_summary, level_changes=level_changes, set_level_number=set_level_number,
                    default_packs=tuple(m.get("defaultPacks") or ("develop", "product")), bi_app_id=m.get("biAppId", ""),
                    levelhub=hub, format_version=m.get("formatVersion"),
-                   web_dir=str((base / m["web"]).resolve()) if m.get("web") else "", rules=js, from_manifest_file=True)
+                   web_dir=str((base / m["web"]).resolve()) if m.get("web") else "",
+                   app_dir=str((base / m["app"]).resolve()) if m.get("app") else "", rules=js, from_manifest_file=True)

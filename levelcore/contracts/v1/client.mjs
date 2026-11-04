@@ -50,8 +50,13 @@ export async function create(pack, n, body = level(n), user = A) {
 
 export const ifMatch = rev => ({ 'If-Match': `"r${rev}"` });
 
+const ZIP_DATE = new Date(2026, 0, 1);
+
+/** Zip cố định theo nội dung (cùng file → cùng byte, cùng digest). */
 export function zipOf(files) {
-  return createZip(Object.entries(files).map(([name, data]) => ({ name, data: typeof data === 'string' ? data : JSON.stringify(data) })));
+  return createZip(Object.entries(files).map(([name, data]) => ({
+    name, date: ZIP_DATE, data: Buffer.isBuffer(data) || typeof data === 'string' ? data : JSON.stringify(data),
+  })));
 }
 
 export const importZip = (pack, files, query = '') =>

@@ -382,6 +382,23 @@ class Store:
                             "author": r["author"], "updated_at": iso(r["updated_at"]),
                             "level": self._decode(self._blob(c, r["blob_sha"]))} for r in rows]}
 
+    def snapshot_levels(self, pack, items):
+        """Đúng các revision đã chốt (Level Hub): [{level, name, rev, sha}] → giống bundle(), level_no lấy từ snapshot.
+        Revision không còn / sha khác → 409."""
+        c = self.db.conn()
+        self._pack(c, pack)
+        out = []
+        for it in items:
+            lv = self._level(c, pack, it["name"])
+            r = lv and c.execute("SELECT * FROM revisions WHERE level_id=? AND rev=?", (lv["id"], it["rev"])).fetchone()
+            if not r or r["blob_sha"] is None or r["blob_sha"] != it["sha"]:
+                raise ApiError(409, f"Level {it['name']} r{it['rev']} không khớp bản đã kiểm tra — bấm Kiểm tra lại")
+            out.append({"name": it["name"], "level_no": it["level"], "rev": it["rev"], "sha": r["blob_sha"],
+                        "author": r["author"], "updated_at": iso(r["created_at"]), "head_rev": lv["head_rev"],
+                        "level": self._decode(self._blob(c, r["blob_sha"]))})
+        out.sort(key=lambda x: (x["level_no"], x["name"]))
+        return out
+
     def list_revisions(self, pack, name):
         c = self.db.conn()
         self._pack(c, pack)

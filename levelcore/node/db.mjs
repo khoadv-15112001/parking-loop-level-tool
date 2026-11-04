@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS audit(
   pack TEXT, level TEXT, rev INTEGER, detail TEXT);
 CREATE INDEX IF NOT EXISTS audit_ts ON audit(ts);
 CREATE INDEX IF NOT EXISTS audit_user ON audit(user, ts);
+CREATE TABLE IF NOT EXISTS ci_levels(
+  digest TEXT PRIMARY KEY, by TEXT NOT NULL, received_at REAL NOT NULL, status TEXT NOT NULL,
+  build TEXT, pack TEXT, detail TEXT, updated_at REAL NOT NULL);
 `;
 
 export class DB {

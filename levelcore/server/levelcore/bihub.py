@@ -9,6 +9,7 @@ dùng 401/403 của BI làm 401/403 của tool (401 làm app tưởng hết phi�
 
 import html
 import json
+import os
 import re
 import secrets
 import urllib.error
@@ -115,7 +116,9 @@ def call(s, method: str, path: str, token: str, *, json_body: Any = None, multip
 def as_api_error(e: BiError, step: str = "", app_id: str = "") -> ApiError:
     """`step` = bước đang gọi (parse-name cần quyền Read Asset Group, tạo nhóm cần Create) — để biết xin quyền gì."""
     hint = {401: " — token hết hạn / sai project, đăng nhập lại",
-            403: f" — tài khoản chưa có quyền Level Hub cho bước này hoặc chưa được truy cập app {app_id or '?'}"}
+            403: f" — tài khoản chưa có quyền Level Hub cho bước này hoặc chưa được truy cập app {app_id or '?'}",
+            409: " — BI đã có bộ cùng tên: đổi Version hoặc ngày rồi đẩy lại",
+            413: " — gói quá lớn với BI: chia nhỏ dải level"}
     where = f" [{step}]" if step else ""
     return ApiError(502, f"BI{where}: {e}{hint.get(e.bi_status, '')}", bi_status=e.bi_status, bi_step=step or None)
 
@@ -189,6 +192,37 @@ def list_groups(s, token: str, page: int, search: str = "", statuses=()) -> Any:
         return out
 
 
+def _created_at(g) -> float:
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(g.get("createdAt") or "").replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _created_by(g) -> str:
+    who = g.get("createdBy")
+    if isinstance(who, dict):
+        who = who.get("email") or who.get("id") or ""
+    return str(who or "").strip().lower()
+
+
+def find_created_group(s, token: str, name: str, app_id: str, since: float, user: str) -> Optional[Dict[str, Any]]:
+    """Mất phản hồi sau POST tạo bộ: tìm bộ cùng tên + appId tạo từ lúc bấm (lệch giờ 2 phút), do chính user tạo nếu BI
+    trả createdBy. Có thì coi như đã đẩy, không thì cho đẩy lại."""
+    params = [("appIds", app_id), ("page", 1), ("limit", PAGE_LIMIT), ("search", name)]
+    params += [("statuses", st) for st in GROUP_STATUSES]
+    out = call(s, "GET", "/asset-groups?" + urllib.parse.urlencode(params), token)
+    items = out if isinstance(out, list) else (out or {}).get("items") or []
+    for g in items:
+        if not isinstance(g, dict) or g.get("name") != name or _created_at(g) < since - 120:
+            continue
+        if g.get("appId") not in (None, app_id) or _created_by(g) not in ("", user):
+            continue
+        return g
+    return None
+
+
 def list_group_files(s, token: str, group_id: str, page: int) -> Any:
     group_id = _checked_id(group_id, "nhóm")
     return call(s, "GET", f"/asset-groups/{group_id}/files?" + urllib.parse.urlencode({"page": page, "limit": PAGE_LIMIT}),
@@ -220,7 +254,8 @@ def get_file_raw(s, token: str, group_id: str, file_id: str) -> Tuple[bytes, str
         content_type = "application/json"
     return raw, content_type
 
-_LOOKUP_URL = "https://identitytoolkit.googleapis.com/v1/accounts:lookup"
+# LEVELCORE_FIREBASE_LOOKUP_URL chỉ để test hợp đồng trỏ vào Firebase giả.
+_LOOKUP_URL = os.environ.get("LEVELCORE_FIREBASE_LOOKUP_URL") or "https://identitytoolkit.googleapis.com/v1/accounts:lookup"
 
 
 def verify_id_token(s, id_token: str) -> str:

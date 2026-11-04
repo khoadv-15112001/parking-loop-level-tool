@@ -3,15 +3,17 @@
 // Game chạy trong <iframe src="/game/index.html"> cùng origin, gắn cố định ở cột preview của
 // panel level (thay cho preview vẽ chấm), nói chuyện qua postMessage:
 //   app → game  {target:<id>, method, arg:<chuỗi>}
-//     LoadPack {pack, levels}        level đang xem của bộ mới (đổi bộ) — không gửi cả bộ
-//     UpdateLevel {pack, level, data} đúng 1 level (chọn level khác, sửa bản nháp) — gửi cả bộ mỗi lần từng làm hết bộ nhớ
+//     LoadPack {pack, levels, source}        level đang xem của bộ mới (đổi bộ) — không gửi cả bộ
+//     UpdateLevel {pack, level, data, source} đúng 1 level (chọn level khác, sửa bản nháp) — gửi cả bộ mỗi lần từng làm hết bộ nhớ
+//     source = "draft" (bản đang mở, có thể chưa lưu) | "r<số>" (revision chọn trong Lịch sử). Game ghi lại trong dòng
+//     level_start (… src=<source>) thì app kiểm game đang chơi đúng bản đã gửi.
 //     PreviewLevel n | LoadLevel n    xem (đứng yên, thấy cả level) | chơi thử
 //     Highlight propId                làm nổi prop cùng loại (rỗng = bỏ)
 //     SetOptions json | Cheat action
 //   game → app  {source:<id>, type:'ready'|'packLoaded'|'line', line:'[<TAG>] …'}
 // Luồng: ready → LoadPack → packLoaded → PreviewLevel N → preview_ready; chọn level / sửa: UpdateLevel → packLoaded → …
 import { api } from './api.mjs';
-import { $, esc, openDialog, toast } from './ui.mjs';
+import { $, confirmDialog, esc, openDialog, toast } from './ui.mjs';
 
 const ORIGIN = location.origin;
 const OUTCOME = { win: ['Thắng', 'ok'], lose: ['Thua', 'err'], quit: ['Thoát', 'muted'] };
@@ -57,13 +59,14 @@ function renderResults() {
 }
 
 const verb = () => (g.mode === 'preview' ? 'dựng' : 'mở');
+const sourceLabel = src => (src === 'draft' ? 'bản đang mở' : src);
 
 function afterSettled() {   // game rảnh: chạy yêu cầu đang xếp hàng (level mới nhất được chọn / bản nháp mới nhất)
   if (!g.queued) return false;
   const q = g.queued;
   g.queued = null;
   if (q.mode) setMode(q.mode);
-  sendUpdate(q.n, q.data);
+  sendUpdate(q.n, q.data, q.source);
   return true;
 }
 
@@ -93,8 +96,9 @@ function onMessage(e) {
     } else if (p.cmd === 'highlight') {
       if (g.highlight) status(`Level ${g.want} · làm nổi ${p.args[0]}: ${p.kv.count ?? 0} prop`, 'ok');
     } else if (p.cmd === 'level_start') {
-      if (n === g.want) { g.phase = 'play'; status(`Đang chơi level ${n}`, 'ok'); afterSettled(); }
-      else status(`Game đang ở level ${n} — chờ mở level ${g.want}…`);
+      if (n !== g.want) status(`Game đang ở level ${n} — chờ mở level ${g.want}…`);
+      else if (p.kv.src && p.kv.src !== g.source) status(`Game đang chơi level ${n} · ${sourceLabel(p.kv.src)}, không phải ${sourceLabel(g.source)} vừa gửi`, 'warn');
+      else { g.phase = 'play'; status(`Đang chơi level ${n} · ${sourceLabel(g.source)}${p.kv.src ? ' ✓' : ''}`, 'ok'); afterSettled(); }
     } else if (p.cmd === 'level_end') {
       g.results.push({ level: n, outcome: p.args[1], kv: p.kv });
       renderResults();
@@ -122,19 +126,19 @@ function build() {
       <button data-act="restart" title="Chơi lại level">↺</button>
       <select class="wg-speed" title="Tốc độ game"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select>
       <button data-act="reload" title="Tải lại game">⟳</button>
-      <button data-act="upload" title="Tải bản build game mới lên server (admin)">⬆</button></header>
+      <button data-act="upload" title="Bản game trên server: bản đang dùng, bản CI chờ chọn, tải bản mới (admin)">⬆</button></header>
     <div class="wg-frame"><iframe title="${esc(proto.title)}" allow="autoplay; fullscreen"></iframe></div>
     <ul class="wg-results small"></ul>`;
   dock.replaceChildren(el);
   const iframe = $('iframe', el);
   g = { el, iframe, ready: false, pending: null, want: null, pack: '', levels: null, phase: 'idle', results: [],
-    mode: 'preview', queued: null, highlight: null };
+    mode: 'preview', queued: null, highlight: null, source: 'draft' };
   setMode('preview');
   iframe.src = `/game/index.html?parent=${encodeURIComponent(ORIGIN)}`;
   el.addEventListener('click', e => {
     const act = e.target.closest('button[data-act]')?.dataset.act;
     if (!act) return;
-    if (act === 'upload') return askForBuild(true);
+    if (act === 'upload') return openBuilds();
     if (act === 'mode') {
       setMode(g.mode === 'preview' ? 'play' : 'preview');
       if (g.ready && g.want != null && g.levels) {   // bộ đã nạp: chỉ cần ra lệnh xem / chơi level đang mở
@@ -156,7 +160,7 @@ function build() {
 function reload() {
   g.ready = false;
   g.queued = null;
-  g.pending = g.levels ? JSON.stringify({ pack: g.pack, levels: g.levels }) : null;
+  g.pending = g.levels ? JSON.stringify({ pack: g.pack, levels: g.levels, source: g.source }) : null;
   g.phase = g.pending ? 'pack' : 'idle';
   g.iframe.src = g.iframe.src;
   status('Đang tải lại game…');
@@ -170,12 +174,13 @@ function setMode(mode) {
 }
 
 /** Gửi đúng 1 level vào bộ đã nạp (UpdateLevel) rồi game báo packLoaded → xem / chơi level đó. */
-function sendUpdate(n, data) {
+function sendUpdate(n, data, source = 'draft') {
   g.want = Number(n);
   g.levels[n] = data;
+  g.source = source;
   g.phase = 'pack';
-  if (g.ready) send('UpdateLevel', JSON.stringify({ pack: g.pack, level: String(n), data }));
-  else g.pending = JSON.stringify({ pack: g.pack, levels: g.levels });
+  if (g.ready) send('UpdateLevel', JSON.stringify({ pack: g.pack, level: String(n), data, source }));
+  else g.pending = JSON.stringify({ pack: g.pack, levels: g.levels, source });
 }
 
 const busy = () => g.phase === 'pack' || g.phase === 'loading';
@@ -189,8 +194,8 @@ async function available() {
 
 function showMissing() {
   dock.innerHTML = `<div class="game-missing"><p>Chưa có bản game WebGL trên server để xem level bằng game thật.</p>
-    <button class="primary">⬆ Tải bản game lên</button></div>`;
-  dock.querySelector('button').addEventListener('click', () => askForBuild(false));
+    <button class="primary">⬆ Bản game</button></div>`;
+  dock.querySelector('button').addEventListener('click', () => openBuilds());
 }
 
 /** Gắn khung game vào cột preview của panel level. */
@@ -204,27 +209,29 @@ export function mountDock(container, opts = {}) {
  * Hiện level n của bộ pack trong khung game (mode 'preview' = xem đứng yên, 'play' = chơi thử). data = bản đang mở (nháp).
  * Chỉ gửi đúng level cần xem: gửi cả bộ (bộ 600 level ~66 MB) làm tool tải lâu và WebGL hết bộ nhớ (abort "OOM").
  * Đổi bộ → LoadPack chỉ chứa level này (game xoá file level cũ của bộ trước); cùng bộ → UpdateLevel.
+ * source: "draft" = bản đang mở (có thể chưa lưu), "r<số>" = revision chọn trong Lịch sử.
  */
-export async function showLevel(pack, n, data, mode = 'preview') {
+export async function showLevel(pack, n, data, mode = 'preview', source = 'draft') {
   if (!dock) return;
   if (!(await available())) { close(); return showMissing(); }
   if (!g) build();
   g.highlight = null;
   if (g.levels && g.pack === pack) {
-    if (busy()) { g.queued = { n, data, mode }; return; }
+    if (busy()) { g.queued = { n, data, mode, source }; return; }
     setMode(mode);
-    sendUpdate(n, data);
-    status(`Đang ${verb()} level ${n}…`);
+    sendUpdate(n, data, source);
+    status(`Đang ${verb()} level ${n} · ${sourceLabel(source)}…`);
     return;
   }
   setMode(mode);
   g.pack = pack;
   g.levels = { [n]: data };
   g.want = Number(n);
+  g.source = source;
   g.queued = null;
   g.phase = 'pack';
-  const payload = JSON.stringify({ pack, levels: g.levels });
-  if (g.ready) { send('LoadPack', payload); status(`Đang ${verb()} level ${n}…`); }
+  const payload = JSON.stringify({ pack, levels: g.levels, source });
+  if (g.ready) { send('LoadPack', payload); status(`Đang ${verb()} level ${n} · ${sourceLabel(source)}…`); }
   else g.pending = payload;
 }
 
@@ -252,14 +259,56 @@ export function close() {
   g = null;
 }
 
-/** Hộp tải bản build game lên (admin) — khi chưa có game, hoặc nút ⬆ để thay bản mới. */
-async function askForBuild(replace = false) {
-  await openDialog({
-    title: replace ? 'Cập nhật bản game WebGL' : 'Chưa có bản game WebGL',
-    html: `<p>${replace ? 'Thay bản game đang có trên server (mọi người dùng bản mới từ lần mở sau).'
-      : 'Server chưa có bản game để xem / chơi thử.'} ${proto.buildHint || 'Build bản WebGL playtest của game thành zip'}, rồi tải lên đây
-      (cần quyền admin) hoặc chạy <code>levelcore\\tools\\install_game.py</code>.</p>
+const BUILD_STATUS = { current: ['Đang dùng', 'ok'], waiting: ['Chờ chọn', 'warn'], rollback: ['Bản trước', 'muted'] };
+const LEVELS_STATUS = { waiting: 'chờ player', imported: 'đã nhập', dropped: 'đã bỏ', error: 'lỗi' };
+const buildLabel = b => b.version || b.file || b.id;
+const when = t => (t ? new Date(t).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) : '');
+
+function levelsNote(r) {
+  const d = r.detail || {};
+  const counts = r.status === 'imported' ? ['created', 'updated', 'unchanged', 'conflict', 'waiting', 'locked'].filter(k => d[k]).map(k => `${k} ${d[k]}`).join(', ') : d.reason || '';
+  return `${esc(r.by.replace(/^ci:/, ''))} · ${esc(LEVELS_STATUS[r.status] || r.status)}${counts ? ` · ${esc(counts)}` : ''}`;
+}
+
+/** SSE game.build: bản game đổi (CI hoặc admin khác) — báo và tải lại khung game; việc của chính mình đã báo ở hộp Bản game. */
+export function onBuildEvent(d, mine = false) {
+  info = null;
+  if (mine) return;
+  const b = d.build || {};
+  if (d.status === 'current') {
+    toast(`Bản game mới: ${buildLabel(b)}${b.branch ? ` (${b.branch})` : ''}`, 'ok');
+    if (g) reload();
+  } else if (d.status === 'waiting') {
+    toast(`Có bản game ${buildLabel(b)} (${b.branch || '?'}) chờ admin chọn — ⬆ trong khung game`);
+  }
+}
+
+/** Hộp bản game: bản đang dùng, bản CI chờ chọn, bản trước để quay lại, level CI gần đây; tải bản mới (admin). */
+async function openBuilds() {
+  let data = { builds: [], levels: [], ci: {} };
+  try { data = await api.gameBuilds(); } catch (e) { toast(e.message, 'err'); }
+  const rows = data.builds.map(b => {
+    const [label, cls] = BUILD_STATUS[b.status] || [b.status, ''];
+    return `<tr><td><b>${esc(buildLabel(b))}</b>${b.commit ? ` <span class="muted">${esc(b.commit.slice(0, 8))}</span>` : ''}</td>
+      <td>${esc(b.branch || (b.source === 'upload' ? 'tải tay' : ''))}${b.buildNumber ? ` #${esc(b.buildNumber)}` : ''}</td>
+      <td class="${cls}">${esc(label)}</td><td class="small">${esc(when(b.uploaded_at))} · ${esc(String(b.uploaded_by || '').replace(/^ci:/, ''))}</td>
+      <td>${b.current ? '' : `<button data-use="${esc(b.id)}">Dùng bản này</button> <button data-del="${esc(b.id)}">Xoá</button>`}</td></tr>`;
+  }).join('');
+  const ci = data.ci?.enabled
+    ? `<p class="small muted">CI: ${data.ci.branch ? `build nhánh <b>${esc(data.ci.branch)}</b> tự thành bản đang dùng, nhánh khác chờ chọn` : 'mọi build tự thành bản đang dùng'}; level CI nhập vào bộ <b>${esc(data.ci.pack)}</b>.</p>`
+    : '<p class="small muted">Chưa bật nhận bản game từ CI.</p>';
+  const levels = data.levels.length ? `<p class="small">Level từ CI gần đây:</p><ul class="small">${data.levels.slice(0, 6).map(r => `<li>${levelsNote(r)}</li>`).join('')}</ul>` : '';
+  const pick = await openDialog({
+    title: 'Bản game WebGL',
+    html: `${rows ? `<table><tr><th>Bản</th><th>Nhánh</th><th>Trạng thái</th><th>Lúc</th><th></th></tr>${rows}</table>` : '<p>Server chưa có bản game để xem / chơi thử.</p>'}
+      ${ci}${levels}
+      <p class="small">${proto.buildHint || 'Build bản WebGL playtest của game thành zip'}, rồi tải lên đây (admin) hoặc chạy <code>levelcore\\tools\\install_game.py</code>.</p>
       <label>Zip bản build WebGL<input id="wg-zip" type="file" accept=".zip"></label><p id="wg-up" class="small"></p>`,
+    onOpen: (dlg, done) => dlg.addEventListener('click', e => {
+      const use = e.target.closest('[data-use]')?.dataset.use, del = e.target.closest('[data-del]')?.dataset.del;
+      if (use) done({ use });
+      if (del) done({ del });
+    }),
     actions: [{ label: 'Đóng', value: null }, {
       label: 'Tải lên', primary: true, onClick: async dlg => {
         const f = $('#wg-zip', dlg).files[0];
@@ -274,4 +323,19 @@ async function askForBuild(replace = false) {
       },
     }],
   });
+  if (!pick?.use && !pick?.del) return;
+  try {
+    if (pick.use) {
+      const r = await api.activateBuild(pick.use);
+      const imported = r.levels.filter(x => x.status === 'imported').length;
+      toast(`Đang dùng bản ${buildLabel(r.build)}${imported ? ` · đã nhập level CI đi kèm` : ''}`, 'ok');
+      info = null;
+      if (g) reload();
+    } else if (await confirmDialog('Xoá bản game này?', 'Level CI đang chờ bản này cũng bị bỏ.', 'Xoá')) {
+      await api.removeBuild(pick.del);
+      toast('Đã xoá bản game', 'ok');
+    }
+  } catch (e) {
+    toast(e.message, 'err');
+  }
 }

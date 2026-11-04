@@ -5,6 +5,8 @@ khai báo ở GamePlugin.levelhub (LevelHubSpec) — store.game.levelhub.
 - Tên zip: {Game}_{OS}_{FromLv}_{ToLv}_{GEO}_{Why}_{Designer}_{Date ddMM}_{Ver}.zip (đoạn rỗng vẫn giữ dấu _).
 - Mỗi dòng metadata: game, os, team, designer, version, level, mechanics, difficulty, layout, uniqueColor, totalBlock,
   obstacleInfos, time, date (ddMMyy giờ VN), geo, why, fromLv, toLv.
+- Kiểm tra trả `snapshot` (số, tên, revision, sha của từng level). Xuất / đẩy kèm `snapshot` thì đóng gói đúng các revision
+  đó: sửa level sau khi kiểm tra không đổi gói.
 """
 import io
 import json
@@ -25,6 +27,7 @@ GEO_OPTIONS = ("Tier1", "Tier2", "Tier3", "Tier4", "Global")
 NO_OBSTACLES = "N0"
 FIELD_ORDER = ("game", "os", "team", "designer", "version", "level", "mechanics", "difficulty", "layout", "uniqueColor",
                "totalBlock", "obstacleInfos", "time", "date", "geo", "why", "fromLv", "toLv")
+MAX_SNAPSHOT = 20000
 _EMPTY = {"mechanics": "", "difficulty": 0, "uniqueColor": 0, "totalBlock": 0, "time": 0, "obstacleCounts": {}}
 
 
@@ -100,6 +103,7 @@ class ExportRequest:
     geo: list = field(default_factory=list)
     version: str = "v1"
     allow_missing: bool = False
+    snapshot: list | None = None
 
     @classmethod
     def parse(cls, pack: str, body: dict) -> "ExportRequest":
@@ -128,13 +132,25 @@ class ExportRequest:
             raise RequestError("geo phải là mảng chuỗi")
         req.geo = geo
         req.allow_missing = body.get("allow_missing") is True
+        snap = body.get("snapshot")
+        if snap is not None:
+            if not isinstance(snap, list) or len(snap) > MAX_SNAPSHOT or not all(
+                    isinstance(x, dict) and isinstance(x.get("name"), str) and isinstance(x.get("rev"), int)
+                    and isinstance(x.get("sha"), str) and isinstance(x.get("level"), int) for x in snap):
+                raise RequestError("snapshot phải là mảng {level, name, rev, sha} lấy từ bước Kiểm tra")
+            req.snapshot = snap
         return req
 
 
 def preflight(store, req: ExportRequest, today: date | None = None) -> dict:
-    """Báo cáo trước khi xuất: level trong dải, level thiếu, lỗi validator, tên zip."""
-    bundle = store.bundle(req.pack)
-    in_range = [lv for lv in bundle["levels"] if req.from_lv <= lv["level_no"] <= req.to_lv]
+    """Báo cáo trước khi xuất: level trong dải, level thiếu, lỗi validator, tên zip, snapshot để xuất đúng bản đã kiểm."""
+    if req.snapshot is None:
+        levels = store.bundle(req.pack)["levels"]
+    else:
+        levels = store.snapshot_levels(req.pack, req.snapshot)
+    in_range = [lv for lv in levels if req.from_lv <= lv["level_no"] <= req.to_lv]
+    if req.snapshot is not None and len(in_range) != len(levels):
+        raise ApiError(400, "snapshot có level ngoài dải from_lv..to_lv — bấm Kiểm tra lại")
     have = {lv["level_no"] for lv in in_range}
     missing = [n for n in range(req.from_lv, req.to_lv + 1) if n not in have]
     spec = spec_of(store)
@@ -150,7 +166,8 @@ def preflight(store, req: ExportRequest, today: date | None = None) -> dict:
     return {"zipName": compose_zip_name(spec.acronym, req.os_name, req.from_lv, req.to_lv, req.geo, req.why, req.designer,
                                         day, req.version),
             "levelCount": len(in_range), "missing": missing[:500], "missingTotal": len(missing), "errors": errors,
-            "rows": rows, "_levels": in_range}
+            "rows": rows, "_levels": in_range,
+            "snapshot": [{"level": lv["level_no"], "name": lv["name"], "rev": lv["rev"], "sha": lv["sha"]} for lv in in_range]}
 
 
 def to_payload(report: dict) -> dict:
@@ -183,5 +200,6 @@ def build_zip(store, req: ExportRequest, today: date | None = None) -> tuple[str
             archive.writestr(f"{RAW_FOLDER}/{n}.json", json.dumps(lv["level"], ensure_ascii=False, indent=2).encode("utf-8"))
         archive.writestr(METADATA_FILE_NAME, json.dumps({"Levels": rows}, indent=4, ensure_ascii=False).encode("utf-8"))
     summary = {"zipName": report["zipName"], "levelCount": report["levelCount"], "missingTotal": report["missingTotal"],
-               "manifest": [{"level": lv["level_no"], "rev": lv["rev"], "sha": lv["sha"]} for lv in report["_levels"]]}
+               "manifest": [{"level": lv["level_no"], "rev": lv["rev"], "sha": lv["sha"]} for lv in report["_levels"]],
+               "newer": [lv["level_no"] for lv in report["_levels"] if lv.get("head_rev", lv["rev"]) != lv["rev"]]}
     return report["zipName"], buf.getvalue(), summary

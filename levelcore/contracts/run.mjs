@@ -1,13 +1,16 @@
 // Chạy bộ test hợp đồng v1 với từng server:  node levelcore/contracts/run.mjs [python|node|all]
-// Mỗi runtime: dựng server với game mẫu (contracts/sample/manifest.json) trên DB tạm, đợi /healthz, chạy
-// node --test contracts/v1/*.test.mjs với BASE_URL trỏ vào server đó, rồi tắt server. Python lấy từ $PYTHON hoặc .venv.
+// Mỗi runtime: dựng server với game mẫu (contracts/sample/manifest.json) trên DB tạm, BI giả (fake_bi.mjs) và token CI,
+// đợi /healthz, chạy node --test contracts/v1/*.test.mjs với BASE_URL trỏ vào server đó, rồi tắt server.
+// Python lấy từ $PYTHON hoặc .venv.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startFakeBi } from './fake_bi.mjs';
 
+const CI_TOKEN = 'ci-token-for-contract-tests';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CORE = path.dirname(HERE);
 const REPO = path.dirname(CORE);
@@ -45,11 +48,14 @@ async function waitHealthy(base, child, log) {
   throw new Error(`server không trả /healthz sau 30 giây:\n${log.join('')}`);
 }
 
-function startServer(runtime, port, dir) {
+function startServer(runtime, port, dir, bi) {
   const env = {
     ...process.env, LEVELCORE_GAME_MANIFEST: SAMPLE, SAMPLELEVEL_DEV: '1', SAMPLELEVEL_DB: path.join(dir, 'contract.db'),
     SAMPLELEVEL_ADMINS: 'a@sonat.vn', SAMPLELEVEL_PORT: String(port), SAMPLELEVEL_PUBLIC_BASE: `http://127.0.0.1:${port}`,
-    SAMPLELEVEL_GAME_DIR: path.join(dir, 'game'),
+    SAMPLELEVEL_GAME_DIR: path.join(dir, 'game'), SAMPLELEVEL_CI_TOKEN: CI_TOKEN, SAMPLELEVEL_CI_BRANCH: 'main',
+    SAMPLELEVEL_BI_API_URL: bi, SAMPLELEVEL_BI_APP_ID: 'com.sample.game', SAMPLELEVEL_BI_FIREBASE_API_KEY: 'fake-key',
+    SAMPLELEVEL_BI_FIREBASE_AUTH_DOMAIN: 'fake.firebaseapp.com', SAMPLELEVEL_BI_FIREBASE_PROJECT_ID: 'fake',
+    SAMPLELEVEL_BI_FIREBASE_APP_ID: '1:1:web:1', LEVELCORE_FIREBASE_LOOKUP_URL: `${bi}/lookup`,
   };
   if (runtime === 'python') {
     return spawn(python(), ['-m', 'uvicorn', '--factory', 'levelcore.main:get_app', '--host', '127.0.0.1', '--port', String(port), '--workers', '1'],
@@ -61,7 +67,8 @@ function startServer(runtime, port, dir) {
 async function run(runtime) {
   const port = await freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `levelcore-contract-${runtime}-`));
-  const child = startServer(runtime, port, dir);
+  const bi = await startFakeBi();
+  const child = startServer(runtime, port, dir, bi.url);
   const log = [];
   child.stdout.on('data', d => log.push(String(d)));
   child.stderr.on('data', d => log.push(String(d)));
@@ -70,7 +77,9 @@ async function run(runtime) {
     await waitHealthy(base, child, log);
     console.log(`\n== ${runtime}: ${base}`);
     const code = await new Promise(resolve => {
-      const t = spawn(process.execPath, ['--test', '--test-reporter=spec', ...TESTS], { stdio: 'inherit', env: { ...process.env, BASE_URL: base } });
+      const t = spawn(process.execPath, ['--test', '--test-reporter=spec', ...TESTS], {
+        stdio: 'inherit', env: { ...process.env, BASE_URL: base, FAKE_BI_URL: bi.url, CI_TOKEN },
+      });
       t.on('exit', resolve);
     });
     return code;
@@ -79,6 +88,8 @@ async function run(runtime) {
     if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
     else child.kill();
     await exited;
+    bi.server.closeAllConnections();
+    bi.server.close();
     try {
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
     } catch (e) {

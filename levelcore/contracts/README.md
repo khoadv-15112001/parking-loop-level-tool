@@ -15,11 +15,15 @@ node levelcore/contracts/run.mjs python
 node levelcore/contracts/run.mjs node
 ```
 
-Mỗi runtime: dựng server trên DB tạm với đăng nhập DEV (`a@sonat.vn` là admin, `b@sonat.vn` không), đợi `/healthz`, chạy
-test rồi tắt. Python lấy từ `$PYTHON`, nếu không có thì `.venv` của repo. Muốn chạy test với một server đang chạy sẵn:
-`BASE_URL=http://127.0.0.1:8880 node --test levelcore/contracts/v1/*.test.mjs`.
+Mỗi runtime: dựng server trên DB tạm với đăng nhập DEV (`a@sonat.vn` là admin, `b@sonat.vn` không), BI và Firebase giả
+(`fake_bi.mjs`), token CI và nhánh CI `main`; đợi `/healthz`, chạy test rồi tắt. Python lấy từ `$PYTHON`, nếu không có
+thì `.venv` của repo. Muốn chạy test với một server đang chạy sẵn: `BASE_URL=http://127.0.0.1:8880 node --test
+levelcore/contracts/v1/*.test.mjs` (test BI và CI cần thêm `FAKE_BI_URL`, `CI_TOKEN` như `run.mjs` đặt).
 
-## Route của mốc 1
+Test riêng từng server (phần cần chỉnh đồng hồ, giao diện riêng của game): `pytest` trong `levelcore/server` và
+`node --test levelcore/node/tests/*.test.mjs`.
+
+## Route
 
 | Route | Python | Node |
 | --- | --- | --- |
@@ -33,12 +37,50 @@ test rồi tắt. Python lấy từ `$PYTHON`, nếu không có thì `.venv` c�
 | `POST /api/promote` | có | có |
 | `POST /api/packs/{pack}/import[?dry_run&force&folder&message]`, `GET …/export` | có | có |
 | `GET /api/audit`, `GET /api/events` (SSE) | có | có |
-| `GET /app/*` (vỏ web), `GET /app/game/*` (module web của game) | có | có |
-| Đăng nhập Google của BI: `/bi/login`, `POST /auth/firebase` | có | chưa |
-| BI Level Hub: `/api/levelhub/*`, `/api/bi/*`, `/api/packs/{pack}/levelhub/*` | có | chưa (`features.levelhub = false`) |
-| Bản WebGL chơi thử: `/api/game*`, `/game/*` | có | chưa (`features.webgame = false`) |
+| `GET /app/*` (vỏ web hoặc giao diện riêng của game), `/app/game/*` (module web của game), `/core/*` (module của core) | có | có |
+| Đăng nhập Google của BI: `GET /bi/login`, `POST /auth/firebase` | có | có |
+| Level Hub: `GET /api/levelhub/options`, `POST /api/packs/{pack}/levelhub/preflight\|export\|upload` | có | có |
+| BI: `GET /api/bi/config`, `/api/bi/asset-groups[/{id}/files[/{file}/raw]]`, `/api/bi/groups/{id}`, `POST /api/bi/groups/{id}/{action}` | có | có |
+| Bản game: `GET /api/game`, `POST /api/game/upload`, `/api/game/uploads…` (theo phần), `GET /game/*` | có | có |
+| Bản build: `GET /api/game/builds`, `POST /api/game/builds/{id}/activate`, `DELETE /api/game/builds/{id}` (admin) | có | có |
+| CI v1: `GET /api/ci/status`, `POST /api/ci/levels?by`, `POST /api/ci/webgl?by&version&commit&branch&buildNumber&buildUrl` | có | có |
 
-Web đọc `features` trong `/api/me` để ẩn nút của tính năng server chưa có. Server cũ không trả `features` thì coi như đủ.
+Web đọc `features` trong `/api/me` để ẩn nút của tính năng server không có. Server cũ không trả `features` thì coi như đủ.
+
+## Giao diện riêng của game
+
+Manifest có `"app": "<thư mục>"` thì `/app/` phục vụ thư mục đó thay vỏ của core: game tự làm giao diện, không theo bố
+cục của core. Module của core vẫn mở ở `/core/` để import: `/core/js/api.mjs` (client API, gọi `setStoragePrefix` trước),
+`query.mjs` (tìm theo số, dải, chữ không dấu), `fields.mjs` (form field), `webgame.mjs` (khung game WebGL),
+`levelhub_bi.mjs`, `biauth.mjs`, `sync.mjs` (SSE, khoá). Không khai `app` thì dùng vỏ của core.
+
+## Xuất Level Hub theo snapshot
+
+`preflight` trả thêm `snapshot: [{level, name, rev, sha}]`. Gửi lại đúng `snapshot` đó trong body của `export` / `upload`
+thì gói dùng đúng các revision đã kiểm tra, dù có người sửa level sau đó (`newer` trong kết quả upload liệt kê level
+đã có bản mới hơn). Revision không còn hoặc sha khác: 409. Không gửi `snapshot` thì dùng head như trước.
+
+Đẩy lên BI mà mất phản hồi sau khi gửi (BI không trả lời, mạng đứt): server tìm bộ cùng tên và appId vừa tạo từ lúc bấm.
+Thấy thì trả như thành công kèm `recovered: true`; không thấy thì 502 với `bi_status: null`, `checked_at`, đẩy lại được.
+Lỗi của BI luôn là 502 kèm `bi_status` gốc (401, 403, 409, 413 có gợi ý riêng), không thành 401/403 của tool.
+
+## CI v1 và bản build
+
+Jenkins (`sonat-game-cicd` `level_tool_upload.py`) gửi `Authorization: Bearer <PREFIX>_CI_TOKEN`. Token CI chỉ dùng được
+cho `/api/ci/*`; phiên người dùng không gọi được `/api/ci/*` và ngược lại.
+
+- **Bản build**: id cố định theo `buildUrl`, thiếu thì `branch#buildNumber`, thiếu nữa thì digest zip. Gửi lại bản đã có
+  trả `unchanged`, kể cả hai request đồng thời. Build nhánh `<PREFIX>_CI_BRANCH` (rỗng = mọi nhánh) thành bản đang dùng;
+  nhánh khác `waiting`, admin chọn ở `POST /api/game/builds/{id}/activate`. Giữ 1 bản trước để quay lại và 3 bản chờ mới
+  nhất. Zip lỗi trả 400 và không đụng bản đang dùng.
+- **Level CI**: zip mọi `<số>.json` vào bộ `<PREFIX>_CI_PACK` (rỗng = bộ mặc định đầu). Nằm chờ tới khi player cùng `by`
+  tới (theo thứ tự nhận): player lên bản đang dùng thì nhập ngay, player chờ thì nhập khi admin chọn bản đó. Player lỗi, bản
+  bị xoá / bị dọn, hoặc quá 2 giờ chưa có player thì bỏ (`dropped`, kèm lý do). Zip cùng digest đã nhập trả `duplicate`.
+  Nhập theo luật ở mục Nhập level: level GD đã sửa thành `conflict`, không bị ghi đè.
+- Hai lần chạy Jenkins khác nhánh cùng số build gửi cùng `by` (`jenkins-57`): level đi theo player tới trước. Thứ tự đúng
+  khi mỗi lần chạy gửi level rồi player, như `level_tool_upload.py`.
+
+Mỗi lần bản game đổi, server phát SSE `game.build` `{status, build, author, levels}`; web báo và tải lại khung game.
 
 ## Lỗi
 
