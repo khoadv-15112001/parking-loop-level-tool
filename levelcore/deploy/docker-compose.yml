@@ -1,10 +1,11 @@
 # Chạy thử image giống BI Center trên máy: docker compose -f levelcore/deploy/docker-compose.yml up -d --build
+# Server Node: đặt LEVELCORE_DOCKERFILE=levelcore/deploy/Dockerfile.node trước lệnh (mặc định server Python).
 # Biến <PREFIX>_* (BI, admin…) đọc từ .env ở gốc repo (mẫu game/.env.example).
 services:
   leveltool:
     build:
       context: ../..
-      dockerfile: levelcore/deploy/Dockerfile
+      dockerfile: ${LEVELCORE_DOCKERFILE:-levelcore/deploy/Dockerfile}
     image: leveltool-server:latest
     restart: unless-stopped
     env_file:

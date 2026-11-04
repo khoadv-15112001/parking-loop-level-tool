@@ -63,6 +63,7 @@ class GamePlugin:
     app_dir: str = ""                    # giao diện riêng của game thay vỏ của core ở /app/; rỗng = vỏ của core
     rules: Any = None                    # JsRules chạy module luật JS (from_manifest); None = plugin Python
     from_manifest_file: bool = False     # game mới: <PREFIX>_ADMINS rỗng không cấp quyền admin cho ai
+    manifest_file: str = ""              # đường dẫn game/manifest.json (web đọc ở /app/game/manifest.json)
 
     @classmethod
     def from_manifest(cls, path: str | os.PathLike) -> "GamePlugin":
@@ -110,5 +111,6 @@ class GamePlugin:
                    level_summary=level_summary, level_changes=level_changes, set_level_number=set_level_number,
                    default_packs=tuple(m.get("defaultPacks") or ("develop", "product")), bi_app_id=m.get("biAppId", ""),
                    levelhub=hub, format_version=m.get("formatVersion"),
-                   web_dir=str((base / m["web"]).resolve()) if m.get("web") else "",
+                   web_dir=str((base / m["web"]).resolve()) if m.get("web") else str(rules_path.parent),
+                   manifest_file=str(path),
                    app_dir=str((base / m["app"]).resolve()) if m.get("app") else "", rules=js, from_manifest_file=True)

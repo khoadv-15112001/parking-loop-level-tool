@@ -1,0 +1,25 @@
+# Server Node của level-tool-core. Build từ GỐC repo tool của game (cần levelcore/ + game/):
+#   docker build -f levelcore/deploy/Dockerfile.node .
+# File của level-tool-core — game không sửa. Không có dependency npm; Node >= 22.13 (node:sqlite).
+FROM node:22-bookworm-slim
+
+WORKDIR /app
+# layout giữ nguyên như repo: /app/levelcore (server Node, web, trang đăng nhập BI) + /app/game (manifest, luật, web)
+COPY levelcore/ /app/levelcore/
+COPY game/ /app/game/
+
+# Mặc định như BI Center (volume /data → SBP_DATA_DIR: database <tool>.db + bản game WebGL ở /data/game).
+# BI đặt lại SBP_* lúc chạy (SBP_SQLITE_PATH theo bi.yaml); docker chạy local dùng luôn mặc định.
+ENV SBP_DATA_DIR=/data \
+    HOST=0.0.0.0 \
+    PORT=8000 \
+    HOME=/tmp \
+    NODE_NO_WARNINGS=1
+# BI chạy container bằng user số, không phải root: /data (volume) phải ghi được bởi uid 10001
+RUN mkdir -p /data && chown 10001:10001 /data
+VOLUME /data
+USER 10001
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:8000/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+# 1 tiến trình là BẮT BUỘC: broker SSE + khoá ghi SQLite nằm trong tiến trình
+CMD ["node", "levelcore/node/server.mjs"]

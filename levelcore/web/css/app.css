@@ -53,6 +53,9 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   border-bottom: 1px solid var(--lc-border); }
 .brand { font-weight: 700; margin-right: 8px; }
 .brand .version { font-weight: 400; font-size: 11px; color: var(--lc-muted); }
+.brand .version.clickable { cursor: pointer; text-decoration: underline dotted; }
+.whatsnew h3 { font-size: 14px; margin: 12px 0 4px; }
+.whatsnew ul { margin: 2px 0 6px; padding-left: 18px; }
 .pack-pick select { margin-left: 4px; }
 .conn { width: 10px; height: 10px; border-radius: 50%; background: var(--lc-err); display: inline-block; }
 .conn.on { background: var(--lc-ok); }

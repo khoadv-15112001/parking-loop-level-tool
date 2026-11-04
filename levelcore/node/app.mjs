@@ -358,6 +358,18 @@ export function createApp(game, s) {
   const webHeaders = { 'Content-Security-Policy': WEB_CSP, 'Cache-Control': 'private, no-cache' };
   const coreWebDir = path.join(s.webRoot, 'levelcore', 'web');
   const appDir = game.appDir || coreWebDir;
+  // Game không có game.mjs riêng thì dùng game.mjs mặc định của core (dựng từ manifest + module luật).
+  const gameWebFallback = {
+    'game.mjs': path.join(coreWebDir, 'js', 'default_game.mjs'), 'manifest.json': game.manifestPath, 'rules.mjs': game.rulesPath,
+  };
+
+  function serveGameWeb(res, rel) {
+    if (serveFile(res, game.webDir, rel, webHeaders)) return;
+    const file = gameWebFallback[rel];
+    if (file && serveFile(res, path.dirname(file), path.basename(file), webHeaders)) return;
+    if (rel === 'game.css') return sendBytes(res, 200, Buffer.alloc(0), { 'Content-Type': 'text/css; charset=utf-8', ...webHeaders });
+    throw new ApiError(404, 'Not Found');
+  }
 
   async function handle(req, res) {
     const url = new URL(req.url, 'http://local');
@@ -411,7 +423,7 @@ export function createApp(game, s) {
     }
     if (isGame && builds.serve(req, res, safeDecode(p.slice('/game/'.length)))) return;
     if (isGame) throw new ApiError(404, 'Chưa có bản game WebGL — tải bản build lên (README: Chơi thử bằng game thật)');
-    if (p.startsWith('/app/game/') && serveFile(res, game.webDir, p.slice('/app/game/'.length), webHeaders)) return;
+    if (p.startsWith('/app/game/')) return serveGameWeb(res, p.slice('/app/game/'.length));
     if (p.startsWith('/core/') && serveFile(res, coreWebDir, p.slice('/core/'.length), webHeaders)) return;
     if (p.startsWith('/app/') && !p.startsWith('/app/game/') && serveFile(res, appDir, p.slice('/app/'.length), webHeaders)) return;
     throw new ApiError(404, 'Not Found');

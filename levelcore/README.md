@@ -5,13 +5,25 @@ Phần chung của mọi tool level (HoleLevel, FishLevel, AntLevel…). Mỗi t
 
 | Thư mục | Của ai | Nội dung |
 | --- | --- | --- |
-| `levelcore/` | **core** — game không sửa | server đồng bộ, vỏ app web, validate runner, Docker, tools, template game mới |
-| `game/` | **game** | plugin server, validator + module web riêng, test riêng, `game.env`, `.env.example` |
-| `ChayDev.bat`, `.gitignore`, `.dockerignore` | core | |
-| `README.md`, `bi.yaml` | game | (core chỉ có bản mẫu ở `levelcore/template/`) |
+| `levelcore/` | **core** — game không sửa | hai server (Python, Node), vỏ app web, Docker, tools, starter game mới |
+| `game/` | **game** | `manifest.json`, luật level `web/rules.mjs`, Có gì mới `web/releases.json`, test, `game.env`, `.env.example` |
+| `ChayDev.bat`, `.gitignore`, `.dockerignore`, `.claude/skills/` | core | |
+| `README.md`, `AGENTS.md`, `CLAUDE.md`, `bi.yaml` | game | (core chỉ có bản mẫu ở `levelcore/template/`) |
 | `data/`, `.env`, `.venv` | local | không commit |
 
-Fork / cập nhật từ core / đóng góp ngược về core: [FORK.md](FORK.md).
+Quy tắc cho người và agent làm tool (chỗ được sửa, viết phần game, giao diện, changelog): [AGENTS.md](AGENTS.md).
+Fork / đóng góp ngược về core: [FORK.md](FORK.md). Game mới: `node levelcore/tools/new_game.mjs …` hoặc skill
+`levelcore-new-game`.
+
+## Nâng core
+
+1. Đọc phần **Cần chú ý** của các bản mới trong [CHANGELOG.md](CHANGELOG.md) của `core/main`: bước nâng cấp bắt buộc
+   (biến mới trên BI, đổi hợp đồng hook) nằm ở đó.
+2. `git fetch core && git merge core/main`. Merge chỉ đổi `levelcore/` và file của core; nếu xung đột ở `README.md`,
+   `AGENTS.md`, `CLAUDE.md` gốc repo thì giữ bản của game.
+3. `node --test game/tests/*.test.mjs`, mở tool bằng `ChayDev.bat`, thử một level. Không phải sửa `game/` trừ khi Cần chú
+   ý ghi rõ.
+4. Commit merge, phát hành như thường (thêm dòng Có gì mới nếu GD thấy khác).
 
 ## Có gì trong core
 
@@ -24,8 +36,9 @@ Fork / cập nhật từ core / đóng góp ngược về core: [FORK.md](FORK.m
 | Đăng nhập | Google của BI (Firebase) → phiên ký HMAC; DEV: header `X-Dev-User`; SSO `vl_sso` |
 | BI Level Hub | xuất gói `LevelMetadata.json` + `Raw/<n>.json` (hợp đồng `com.sonat.level.build` 0.4.0), đẩy lên BI, duyệt / nhập / lưu trữ bộ trên BI, mở bộ Level Hub thành bộ riêng |
 | Playtest | bản WebGL của game ở `/game/` (upload theo phần, `.br`, cache), khung game trong app (xem / chơi thử / làm nổi / cheat) |
-| Deploy | `deploy/Dockerfile` cho BI Center (SBP_*), `deploy/docker-compose.yml` |
-| Vỏ app web | chọn bộ, danh sách, panel level (Tổng quan / JSON / Lịch sử), sửa / lưu / xung đột, các hộp thoại |
+| CI | hợp đồng CI v1 của Jenkins: nhận player WebGL và level, build nhánh theo dõi lên ngay, nhánh khác chờ admin chọn |
+| Deploy | `deploy/Dockerfile` (Python), `deploy/Dockerfile.node` (Node) cho BI Center (SBP_*), `deploy/docker-compose.yml` |
+| Vỏ app web | chọn bộ, danh sách, panel level (Tổng quan / JSON / Lịch sử), sửa / lưu / xung đột, các hộp thoại, Có gì mới |
 
 ## Hai cách khai game, hai server
 
@@ -44,10 +57,14 @@ Server Node: `node levelcore/node/server.mjs` (game ở `game/manifest.json` ho�
 `<PREFIX>_PORT`, mặc định 8880; cùng biến môi trường `<PREFIX>_*` như bảng dưới). Server Python tự nạp `game/manifest.json`
 nếu có, không thì nạp plugin Python.
 
-Module web của game khai `fields: [{path, label, type: 'number' | 'text' | 'bool' | 'select', options?, min?, max?}]` thì
-core tự dựng form ở tab Tổng quan, chỉ ghi đúng field vừa sửa; `renderOverview` (nếu có) vẽ tiếp bên dưới.
+Game khai bằng manifest không cần module web: vỏ của core tự dựng `game.mjs` từ manifest và module luật
+(`web/js/default_game.mjs`). Module luật export `fields: [{path, label, type: 'number' | 'text' | 'bool' | 'select',
+options?, min?, max?}]` thì core dựng form ở tab Tổng quan, chỉ ghi đúng field vừa sửa. Game có `web/game.mjs` riêng thì
+dùng file đó (các trường ở mục Plugin web).
 
-## Plugin server — `game/server/gameplugin`
+## Plugin server — `game/server/gameplugin` (game cũ)
+
+Game cũ (HoleLevel) khai bằng plugin Python; game mới dùng manifest. Core vẫn chạy plugin như trước.
 
 Package `gameplugin` có biến `GAME = GamePlugin(...)` ([`server/levelcore/plugin.py`](server/levelcore/plugin.py)):
 
@@ -66,7 +83,7 @@ Package `gameplugin` có biến `GAME = GamePlugin(...)` ([`server/levelcore/plu
 Server: `uvicorn --factory levelcore.main:get_app` với `PYTHONPATH=levelcore/server;game/server`
 (`LEVELCORE_GAME_MODULE` đổi tên module plugin).
 
-## Plugin web — `game/web/`
+## Plugin web — `game/web/game.mjs` (game cũ, hoặc game cần danh sách / tab Tổng quan riêng)
 
 Core phục vụ `levelcore/web` ở `/app/` và `game/web` ở `/app/game/`. Vỏ app nạp `/app/game/game.mjs` (export default)
 và `/app/game/game.css`:
@@ -86,7 +103,8 @@ Biến màu CSS của core: `--lc-*` (`--lc-surface`, `--lc-border`, `--lc-sel`,
 
 ## Chạy local
 
-Bấm đúp `ChayDev.bat` (đọc `game/game.env`: `NAME`, `PREFIX`, `PORT`; nạp `.env`; DB `data/dev.db`). Chạy tay:
+Bấm đúp `ChayDev.bat` (đọc `game/game.env`: `NAME`, `PREFIX`, `PORT`, `RUNTIME` = `node` | `python`; nạp `.env`; DB
+`data/dev.db`). Server Node: `node levelcore/node/server.mjs` với `<PREFIX>_DEV=1`. Server Python chạy tay:
 
 ```sh
 py -m venv .venv
@@ -126,7 +144,9 @@ Không tiền tố: `VL_SSO_SECRET`; BI Center: `SBP_SQLITE_PATH`, `SBP_TOOL_URL
 
 ## Tools
 
-- `tools/new_game.py` — tạo `game/`, `bi.yaml`, `README.md` cho tool mới từ `template/`.
+- `tools/new_game.mjs` — tạo `game/`, `bi.yaml`, `README.md`, `AGENTS.md` cho tool mới từ `template/` (`--runtime node | python`);
+  `tools/new_game.py` là lệnh cũ, gọi sang với server Python.
+- `tools/releases.mjs check | tag <version>` — kiểm khung Có gì mới / CHANGELOG, in message của tag.
 - `tools/install_game.py [zip]` — cài bản WebGL playtest vào `GAME_DIR` không qua HTTP.
 
 ## API

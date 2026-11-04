@@ -1,0 +1,11 @@
+[
+  {
+    "version": "0.1.0",
+    "date": "",
+    "title": "Bản đầu của __TOOL__",
+    "added": [
+      "Danh sách level: tìm theo số, dải số và chữ không dấu; tạo, nhân bản, sửa, lưu, xem lịch sử.",
+      "Nhập bộ level từ zip và xem trước level nào tạo mới, cập nhật hay xung đột."
+    ]
+  }
+]

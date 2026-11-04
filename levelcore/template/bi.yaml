@@ -18,7 +18,7 @@ env:
   __PREFIX___BI_FIREBASE_AUTH_DOMAIN: {required: true, description: Firebase web config of BI (public)}
   __PREFIX___BI_FIREBASE_PROJECT_ID: {required: true, description: Firebase web config of BI (public)}
   __PREFIX___BI_FIREBASE_APP_ID: {required: true, description: Firebase web config of BI (public)}
-  __PREFIX___ADMINS: {description: 'Admin emails, comma separated: upload the WebGL game, production / archive flags, break locks. Empty = everyone'}
+  __PREFIX___ADMINS: {required: true, description: 'Admin emails, comma separated: pick or upload the WebGL game, production / archive flags, break locks'}
   __PREFIX___ALLOWED_DOMAIN: {description: 'Email domain allowed in (default sonat.vn)'}
   __PREFIX___CI_TOKEN: {secret: true, description: 'Token Jenkins sends with the WebGL player and level data (only /api/ci/*); empty = CI off'}
   __PREFIX___CI_BRANCH: {description: 'Branch whose CI builds become the current player; other branches wait for an admin. Empty = every build'}
@@ -28,8 +28,8 @@ components:
   - name: server
     type: service
     paths: [/]
-    # Dockerfile của level-tool-core copy levelcore/ + game/ nên build từ gốc repo
-    build: {dockerfile: levelcore/deploy/Dockerfile, context: .}
+    # Dockerfile của level-tool-core (__RUNTIME__) copy levelcore/ + game/ nên build từ gốc repo
+    build: {dockerfile: __DOCKERFILE__, context: .}
     port: 8000
     health: /healthz
     timeouts: long          # SSE realtime + tải bản game WebGL theo từng phần 50 MB

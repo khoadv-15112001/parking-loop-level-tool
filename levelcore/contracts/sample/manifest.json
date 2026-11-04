@@ -2,10 +2,27 @@
   "tool": "SampleLevel",
   "game": "Sample",
   "prefix": "SAMPLELEVEL",
+  "slug": "sample",
+  "storagePrefix": "sample",
   "formatVersion": 1,
   "rules": "web/rules.mjs",
   "web": "web",
-  "defaultPacks": ["develop", "product"],
+  "defaultPacks": [
+    "develop",
+    "product"
+  ],
   "biAppId": "com.sample.game",
-  "levelhub": { "acronym": "Sample", "obstacleCodes": [["Rock", "RK"]] }
+  "levelhub": {
+    "acronym": "Sample",
+    "obstacleCodes": [
+      [
+        "Rock",
+        "RK"
+      ]
+    ]
+  },
+  "webgame": {
+    "id": "sample-game",
+    "tag": "SAMPLE"
+  }
 }

@@ -5,7 +5,8 @@ Hai server của core phải trả cùng hình dữ liệu cho các route dướ
 - Python: `levelcore/server` (FastAPI), chạy bằng `uvicorn --factory levelcore.main:get_app`.
 - Node: `levelcore/node` (không dependency, cần Node >= 22.13), chạy bằng `node levelcore/node/server.mjs`.
 
-Bộ test `v1/*.test.mjs` gọi server qua HTTP nên chạy được với cả hai. Game dùng cho test là `sample/` (manifest + luật JS).
+Bộ test `v1/*.test.mjs` gọi server qua HTTP nên chạy được với cả hai. Game dùng cho test là `sample/` (manifest + luật JS):
+đó là dữ liệu test của core, không phải mẫu để game chép. Game mới bắt đầu từ `levelcore/tools/new_game.mjs`.
 
 ## Chạy
 
@@ -112,12 +113,17 @@ có trong file thì giữ nguyên.
 
 ```json
 {
-  "tool": "SampleLevel", "game": "Sample", "prefix": "SAMPLELEVEL", "formatVersion": 1,
-  "rules": "web/rules.mjs", "web": "web",
+  "tool": "SampleLevel", "game": "Sample", "prefix": "SAMPLELEVEL", "slug": "sample", "storagePrefix": "sample",
+  "formatVersion": 1, "rules": "web/rules.mjs", "web": "web", "app": "app",
   "defaultPacks": ["develop", "product"], "biAppId": "com.sample.game",
-  "levelhub": { "acronym": "Sample", "obstacleCodes": [["Rock", "RK"]] }
+  "levelhub": { "acronym": "Sample", "obstacleCodes": [["Rock", "RK"]] },
+  "webgame": { "id": "sample-game", "tag": "SAMPLE" }
 }
 ```
+
+Bắt buộc: `tool`, `game`, `prefix`, `rules`. `web` (mặc định thư mục chứa `rules`) phục vụ ở `/app/game/`, trình duyệt
+đọc được mọi file trong đó. Không có `web/game.mjs` thì core dựng nó từ manifest (`slug`, `storagePrefix`, `webgame`) và
+module luật (`fields`). `app` là giao diện riêng của game (bỏ thì dùng vỏ của core). `web/releases.json` là bảng Có gì mới.
 
 Module `rules` bắt buộc có `validateLevel(level, {levelNo, formatVersion}) → {isValid, errors, warnings}` và
 `blankLevel(n, template?)`. Thêm khi cần: `levelSummary(level)`, `levelChanges(prev, cur)`, `setLevelNumber(level, n) → level`,

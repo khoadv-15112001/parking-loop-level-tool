@@ -5,12 +5,13 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Body, Depends, FastAPI, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from . import auth as auth_mod
 from . import bihub, ci as ci_mod, levelhub, webgame
@@ -438,6 +439,23 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
     web = s.web_root_dir()
     if (web / "levelcore" / "web" / "index.html").is_file():
         from fastapi.staticfiles import StaticFiles
+
+        # Game không có game.mjs riêng thì dùng game.mjs mặc định của core (dựng từ manifest + module luật).
+        core_web = web / "levelcore" / "web"
+        fallbacks = {"game.mjs": core_web / "js" / "default_game.mjs"}
+        if game.manifest_file:
+            fallbacks.update({"manifest.json": Path(game.manifest_file), "rules.mjs": Path(game.validator_module)})
+        web_types = {".mjs": "text/javascript", ".js": "text/javascript", ".json": "application/json", ".css": "text/css"}
+
+        @app.get("/app/game/{name}", include_in_schema=False)
+        def _game_web(name: str):
+            own = s.game_web_dir() / name
+            f = own if own.is_file() and own.resolve().parent == s.game_web_dir().resolve() else fallbacks.get(name)
+            if f is not None and f.is_file():
+                return FileResponse(f, media_type=web_types.get(f.suffix, "application/octet-stream"))
+            if name == "game.css":
+                return Response("", media_type="text/css")
+            raise ApiError(404, "Not Found")
 
         # trước /app; repo core không có game/ (check_dir=False: chỉ 404)
         app.mount("/app/game", StaticFiles(directory=s.game_web_dir(), check_dir=False), name="web-game")

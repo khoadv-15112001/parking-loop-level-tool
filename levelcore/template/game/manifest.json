@@ -1,0 +1,13 @@
+{
+  "tool": "__TOOL__",
+  "game": "__GAME__",
+  "prefix": "__PREFIX__",
+  "slug": "__SLUG__",
+  "storagePrefix": "__STORAGE__",
+  "formatVersion": 1,
+  "rules": "web/rules.mjs",
+  "web": "web",
+  "defaultPacks": ["develop", "product"],
+  "biAppId": "",
+  "webgame": { "id": "__STORAGE__-game", "tag": "__PREFIX__" }
+}

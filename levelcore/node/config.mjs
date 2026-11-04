@@ -20,7 +20,7 @@ export function settingsFromEnv(manifest, env = process.env) {
     envPrefix: p,
     dev: bool(e('DEV')),
     port,
-    host: e('HOST', '127.0.0.1'),
+    host: e('HOST', env.HOST || '127.0.0.1'),
     dbPath: e('DB') || env.SBP_SQLITE_PATH || (dataDir ? path.join(dataDir, dbName) : path.join(REPO, 'data', dbName)),
     publicBase: (e('PUBLIC_BASE') || env.SBP_TOOL_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, ''),
     webRoot: e('WEB_ROOT', '') || REPO,

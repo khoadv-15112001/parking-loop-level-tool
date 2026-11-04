@@ -1,6 +1,13 @@
-// Luật của game mẫu khai bằng manifest — dùng chung cho test hợp đồng của cả hai server và cho web.
+// Luật của game mẫu khai bằng manifest — dữ liệu test của core cho cả hai server và web, không phải mẫu để game chép.
 // Level: {"level": n, "time": giây, "items": ["rock", "gem", …], "hint"?: chuỗi, "hard"?: bool, "theme"?: chuỗi}.
 // Chỉ validateLevel và blankLevel là bắt buộc; các hook còn lại core có mặc định.
+
+export const fields = [
+  { path: ['time'], label: 'Thời gian (giây)', type: 'number', min: 1 },
+  { path: ['hint'], label: 'Gợi ý cho người chơi', type: 'text' },
+  { path: ['hard'], label: 'Level khó', type: 'bool' },
+  { path: ['theme'], label: 'Theme', type: 'select', options: [{ value: 'forest', label: 'Rừng' }, { value: 'desert', label: 'Sa mạc' }] },
+];
 
 export function validateLevel(level, { levelNo } = {}) {
   const errors = [], warnings = [];

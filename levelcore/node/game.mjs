@@ -23,8 +23,9 @@ export async function loadGame(manifestPath, repo) {
   const hook = name => (typeof rules[name] === 'function' ? rules[name] : null);
   return {
     manifest: m,
+    manifestPath: file,
     rulesPath,
-    webDir: m.web ? path.resolve(base, m.web) : path.join(repo, 'game', 'web'),
+    webDir: m.web ? path.resolve(base, m.web) : path.dirname(rulesPath),
     appDir: m.app ? path.resolve(base, m.app) : null,
     levelhub: m.levelhub ? { acronym: m.levelhub.acronym, obstacleCodes: m.levelhub.obstacleCodes || [] } : null,
     describeHub(level, n) {

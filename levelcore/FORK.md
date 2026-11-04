@@ -2,8 +2,9 @@
 
 ## Quy tắc duy nhất
 
-**Repo của game không sửa gì trong `levelcore/`** (và `ChayDev.bat`, `.gitignore`, `.dockerignore`). Mọi thứ riêng của
-game nằm ở `game/`, `bi.yaml`, `README.md`. Nhờ vậy merge từ core không bao giờ đụng file của game và ngược lại.
+**Repo của game không sửa gì trong `levelcore/`** (và `ChayDev.bat`, `.gitignore`, `.dockerignore`, `.claude/skills/`).
+Mọi thứ riêng của game nằm ở `game/`, `bi.yaml`, `README.md`, `AGENTS.md`, `CLAUDE.md`. Nhờ vậy merge từ core không đụng
+file của game và ngược lại.
 
 Cần core làm thêm điều gì cho game → thêm **điểm mở rộng** vào core (trường mới trong `GamePlugin` / object `game.mjs`, có
 mặc định để game cũ không phải đổi), không rẽ nhánh `if game == …` trong core.
@@ -17,26 +18,31 @@ cd fish-sort-level-tool
 git remote rename origin core
 git remote add origin git@github.com:SonatGameProduct/fish-sort-level-tool.git
 
-# 2. Sinh phần riêng của game từ levelcore/template/
-py levelcore/tools/new_game.py --tool FishLevel --game "Fish Sort" --prefix FISHLEVEL --slug fishsort
-#    (README.md của core đã có sẵn → script giữ nguyên; thay bằng levelcore/template/README.md rồi sửa)
+# 2. Sinh phần riêng của game từ levelcore/template/ (server node hoặc python; py levelcore/tools/new_game.py = python)
+node levelcore/tools/new_game.mjs --tool FishLevel --game "Fish Sort" --prefix FISHLEVEL --slug fishsort --runtime node
+#    README.md, AGENTS.md của core ở gốc repo được thay bằng bản của game
 
-# 3. Viết plugin: game/server/gameplugin (summary, changes, set_level_number, levelhub), game/web/schema.mjs
-#    (validateLevel, blankLevel), game/web/game.mjs (danh sách + tab Tổng quan). Chạy ChayDev.bat, chạy test.
-git add -A && git commit -m "FishLevel: game plugin"
+# 3. Raw thật vào game/tests/raw/, viết game/web/rules.mjs, điền game/manifest.json, chạy node --test game/tests/*.test.mjs,
+#    bấm đúp ChayDev.bat. Chi tiết: levelcore/AGENTS.md, skill levelcore-new-game.
+git add -A && git commit -m "FishLevel: game"
 git push -u origin main
 ```
+
+Game sinh ra chỉ có dữ liệu và luật; giao diện là vỏ của core cho tới khi game tự làm (`levelcore/AGENTS.md`, mục Giao
+diện). Game cũ viết bằng plugin Python (`game/server/gameplugin`) vẫn chạy như trước.
 
 ## Lấy bản mới của core
 
 ```sh
 git fetch core
 git merge core/main            # chỉ đổi levelcore/ (+ ChayDev.bat…) → không xung đột
-cd levelcore/server && ../../.venv/Scripts/python -m pytest && cd ../../game/server && ../../.venv/Scripts/python -m pytest
+node --test game/tests/*.test.mjs
 ```
 
-Đọc `git log core/main` trước khi merge: thay đổi **phá vỡ hợp đồng** (đổi / bỏ trường plugin) ghi rõ trong commit, kèm cách
-sửa phía game.
+Trước khi merge đọc phần **Cần chú ý** của các bản mới trong `levelcore/CHANGELOG.md` (`git show core/main:levelcore/CHANGELOG.md`):
+đó là bước nâng cấp bắt buộc (biến mới, đổi hợp đồng hook). Xung đột chỉ có thể ở `README.md`, `AGENTS.md`, `CLAUDE.md`
+gốc repo khi core đổi bản của nó: giữ bản của game (`git checkout --ours <file>`). Game cũ dùng plugin Python chạy thêm
+`cd game/server && ../../.venv/Scripts/python -m pytest`.
 
 ### Repo game có trước core (lịch sử không chung gốc) — làm một lần
 

@@ -11,6 +11,7 @@ import { parseLevelQuery, queryMatches } from './query.mjs';
 import { $, $$, confirmDialog, esc, fmtTime, openDialog, shortUser, toast } from './ui.mjs';
 import { highlight as gameHighlight, isPreviewing, mountDock, onBuildEvent, refreshPreview, showLevel } from './webgame.mjs';
 import * as sync from './sync.mjs';
+import { mountWhatsNew } from './whatsnew.mjs';
 import game from '../game/game.mjs';
 
 setStoragePrefix(game.storagePrefix);
@@ -66,6 +67,7 @@ async function boot() {
   api.authStatus().then(st => {   // phiên bản trên BI = tag phát hành (<slug>-v0.1.0 → v0.1.0); local = dev
     const v = String(st.version || '');
     $('#app-version').textContent = game.versionPrefix && v.startsWith(game.versionPrefix) ? v.slice(game.versionPrefix.length) : v;
+    return mountWhatsNew($('#app-version'), $('#app-version').textContent, `${game.storagePrefix}.seenVersion`);
   }).catch(() => {});
   try {
     state.bi = await api.biConfig();
