@@ -27,14 +27,14 @@ export function shortUser(email) {
 
 /**
  * Mở hộp thoại. `html` = nội dung (đã esc). actions: [{label, primary?, danger?, onClick(dlg) → false để giữ hộp}].
- * onOpen(dlg, close): close(v) đóng hộp với giá trị v (vd bấm một dòng trong bảng).
+ * onOpen(dlg, close): close(v) đóng hộp với giá trị v (vd bấm một dòng trong bảng). wide: hộp rộng (bảng, biểu đồ).
  * Trả Promise resolve giá trị trả về của action (hoặc null khi đóng).
  */
-export function openDialog({ title, html = '', actions = [{ label: 'Đóng' }], onOpen }) {
+export function openDialog({ title, html = '', actions = [{ label: 'Đóng' }], onOpen, wide = false }) {
   return new Promise(resolve => {
     const back = document.createElement('div');
     back.className = 'dialog-backdrop';
-    back.innerHTML = `<div class="dialog" role="dialog" aria-modal="true"><h3>${esc(title)}</h3>
+    back.innerHTML = `<div class="dialog${wide ? ' wide' : ''}" role="dialog" aria-modal="true"><h3>${esc(title)}</h3>
       <div class="dlg-body">${html}</div><div class="actions"></div></div>`;
     const dlg = back.firstElementChild;
     const close = v => { back.remove(); document.removeEventListener('keydown', onKey); resolve(v); };

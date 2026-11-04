@@ -38,13 +38,19 @@
       <button id="btn-levelhub-bi" title="Các bộ đang có trên BI Level Hub — mở thành bộ riêng, xem lỗi, chạy lại / lưu trữ" hidden>⇩ Level Hub</button>
       <button id="btn-levelhub">Xuất Level Hub</button>
       <button id="btn-audit">Audit</button>
+      <button id="btn-overview" title="Tổng quan bộ: số level theo nhóm, đường chỉ số, cảnh báo, so sánh bộ (O)">Tổng quan</button>
+      <button id="btn-reorder" title="Xếp lại thứ tự level của bộ (Shift+R)" hidden>Xếp thứ tự</button>
       <span class="grow"></span>
       <span id="conn" class="conn" title="Kết nối realtime"></span>
       <span id="online" class="muted"></span>
       <span id="me" class="muted"></span>
+      <button id="btn-trash" title="Thùng rác: level đã xoá, bộ đã lưu trữ" hidden>🗑</button>
+      <button id="btn-admin" title="Quản trị" hidden>⚙ Quản trị</button>
+      <button id="btn-keys" title="Phím tắt (?)">⌨</button>
       <button id="btn-theme" title="Sáng / Tối">◐</button>
       <button id="btn-logout" title="Đăng xuất">⎋</button>
     </header>
+    <div id="notice" class="notice" hidden></div>
 
     <main class="layout">
       <aside class="sidebar">
@@ -52,8 +58,10 @@
           <input id="search" type="search" placeholder="Số, dải 10-20, 2,5,9 hoặc chữ…" title="Tìm theo số level, dải số, danh sách số hoặc chữ (không cần dấu)">
           <select id="filter-mode" title="Lọc"></select>
           <button id="btn-new-level" title="Level mới (số trống đầu tiên)">＋ Mới</button>
+          <button id="btn-grid" title="Danh sách / lưới ảnh">▦</button>
         </div>
-        <div id="list-stats" class="muted small"></div>
+        <div class="list-head"><span id="list-stats" class="muted small"></span>
+          <button id="btn-capture" class="small" title="Dựng từng level chưa có ảnh trong khung game rồi chụp" hidden>📷 Chụp ảnh còn thiếu</button></div>
         <ul id="level-list" class="level-list"></ul>
       </aside>
 
@@ -76,6 +84,7 @@
             <button id="btn-revert" disabled title="Bỏ mọi thay đổi chưa lưu, trả level về bản đã lưu (vẫn giữ quyền sửa)">↺ Hoàn tác</button>
             <button id="btn-save" class="primary" disabled title="Ctrl+S">Lưu</button>
             <button id="btn-play" title="Chơi level này bằng game thật (bản WebGL) — kể cả bản nháp chưa lưu">▶ Chơi thử</button>
+            <button id="btn-share" title="Link chơi trên điện thoại (Shift+P)" hidden>📱</button>
             <details class="more-menu">
               <summary title="Thao tác khác">⋯</summary>
               <div class="menu">
@@ -110,6 +119,7 @@
 
           <div class="tab" id="tab-history" hidden>
             <ul id="history-list" class="history"></ul>
+            <div id="plays-box" hidden><h4>Lượt chơi thử</h4><div id="plays-list"></div></div>
           </div>
         </div>
       </section>

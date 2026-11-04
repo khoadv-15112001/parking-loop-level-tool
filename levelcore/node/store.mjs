@@ -210,6 +210,7 @@ export class Store {
     const out = {
       name: r.name, description: r.description, created_at: iso(r.created_at), created_by: r.created_by,
       archived: !!r.archived, production: !!r.production, platform: r.platform || 'android', group: r.grp || '',
+      archived_at: iso(r.archived_at ?? null), archive_reason: r.archive_reason ?? null,
     };
     if (n != null) out.level_count = n;
     return out;
@@ -234,7 +235,7 @@ export class Store {
     return Store.packJson(p, 0);
   }
 
-  updatePack(user, pack, { archived = null, production = null, platform = null, group = null, description = null } = {}) {
+  updatePack(user, pack, { archived = null, production = null, platform = null, group = null, description = null, archive_reason = null } = {}) {
     for (const [k, v] of [['archived', archived], ['production', production]]) {
       if (v != null && typeof v !== 'boolean') throw new ApiError(400, `${k} phải là true/false`);
     }
@@ -251,6 +252,10 @@ export class Store {
         this.audit(user, `pack.${key}`, pack, null, null, { on: v });
         changed.push(key);
       }
+      if (archived && changed.includes('archived')) {
+        this.db.run('UPDATE packs SET archived_at=?, archive_reason=? WHERE name=?', now(), String(archive_reason || '').trim().slice(0, 300) || null, pack);
+      }
+      if (archived === false && changed.includes('archived')) this.db.run('UPDATE packs SET archived_at=NULL, archive_reason=NULL WHERE name=?', pack);
       if (archived) this.db.run('DELETE FROM locks WHERE pack=?', pack);
       return this.pack(pack);
     });
@@ -269,7 +274,8 @@ export class Store {
       if (lk) {
         throw new ApiError(423, `Level ${pack}/${lk.name} đang bị ${lk.holder} khoá — đổi tên bộ khi không ai đang sửa`, { pack, level: lk.name, holder: lk.holder });
       }
-      this.db.run('INSERT INTO packs(name,description,created_at,created_by,archived,production,platform,grp) SELECT ?,description,created_at,created_by,archived,production,platform,grp FROM packs WHERE name=?', to, pack);
+      this.db.run(`INSERT INTO packs(name,description,created_at,created_by,archived,production,platform,grp,archived_at,archive_reason)
+        SELECT ?,description,created_at,created_by,archived,production,platform,grp,archived_at,archive_reason FROM packs WHERE name=?`, to, pack);
       this.db.run('UPDATE levels SET pack=? WHERE pack=?', to, pack);
       this.db.run('DELETE FROM locks WHERE pack=?', pack);
       this.db.run('UPDATE audit SET pack=? WHERE pack=?', to, pack);
@@ -465,40 +471,77 @@ export class Store {
       if (expected == null) throw new ApiError(428, 'relevel cần header If-Match: "r<rev>"');
       if (expected !== lv.head_rev) this.conflict(lv, pack, src, expected);
       if (locked.length) throw new ApiError(423, `Level ${pack}/${locked[0].level} đang bị ${locked[0].holder} khoá`, { locked });
-      const occupant = new Map(plan.map(([r]) => [r.name, r]));
-      const objs = new Map(plan.filter(([r]) => !r.deleted).map(([r]) => [r.id, Store.decode(this.blob(this.head(r).blob_sha))]));
-      if (p.production) {
-        const finals = plan.filter(([r]) => !r.deleted);
-        const checks = this.validate(finals.map(([r, n]) => [n, objs.get(r.id)]));
-        const bad = finals.map(([r, n], i) => [r, n, checks[i]]).filter(([, , v]) => !v.isValid);
-        if (bad.length) {
-          const [r0, n0, v0] = bad[0];
-          throw new ApiError(422, `Bộ production: level ${pack}/${r0.name} ở số mới ${n0} lỗi: ${v0.errors[0]}`, {
-            validation: bad.map(([r, n, v]) => ({ level: r.name, to: n, errors: v.errors.slice(0, 20) })),
-          });
-        }
-      }
-      for (const [r] of plan) this.db.run('UPDATE levels SET name=? WHERE id=?', `~relevel~${r.id}`, r.id);
-      const moves = [];
-      for (const [r, n] of plan) {
-        this.db.run('UPDATE levels SET name=?, sort_key=? WHERE id=?', n, Number(n), r.id);
-        let res = null;
-        if (!r.deleted) {
-          const obj = this.game.setNumber(objs.get(r.id), Number(n));
-          const prev = occupant.get(n);
-          res = this.writeRev(pack, n, canon(obj), user, 'relevel', {
-            message: `đổi số level ${r.name} → ${n}`, meta: { relevel_from: r.name, mode },
-            rev: Math.max(r.head_rev, prev ? prev.head_rev : 0) + 1,
-          });
-        }
-        this.audit(user, 'level.relevel', pack, n, res?.rev ?? null, { relevel_from: r.name, mode });
-        moves.push({ from: r.name, to: n, rev: res?.rev ?? null, deleted: !!r.deleted });
-      }
-      return { pack, mode, moves, author: user };
+      return { pack, mode, moves: this.applyMoves(pack, p, plan, user, mode), author: user };
     };
     if (dryRun) return run();
     const out = this.db.write(run);
     this.broker.publish('levels.renumbered', out);
+    return out;
+  }
+
+  /** Ghi một kế hoạch đổi số [[level, số mới]] (trong transaction): mỗi level còn sống nhận revision 'relevel'. */
+  applyMoves(pack, p, plan, user, mode) {
+    const occupant = new Map(plan.map(([r]) => [r.name, r]));
+    const objs = new Map(plan.filter(([r]) => !r.deleted).map(([r]) => [r.id, Store.decode(this.blob(this.head(r).blob_sha))]));
+    if (p.production) {
+      const finals = plan.filter(([r]) => !r.deleted);
+      const checks = this.validate(finals.map(([r, n]) => [n, objs.get(r.id)]));
+      const bad = finals.map(([r, n], i) => [r, n, checks[i]]).filter(([, , v]) => !v.isValid);
+      if (bad.length) {
+        const [r0, n0, v0] = bad[0];
+        throw new ApiError(422, `Bộ production: level ${pack}/${r0.name} ở số mới ${n0} lỗi: ${v0.errors[0]}`, {
+          validation: bad.map(([r, n, v]) => ({ level: r.name, to: n, errors: v.errors.slice(0, 20) })),
+        });
+      }
+    }
+    for (const [r] of plan) this.db.run('UPDATE levels SET name=? WHERE id=?', `~relevel~${r.id}`, r.id);
+    const moves = [];
+    for (const [r, n] of plan) {
+      this.db.run('UPDATE levels SET name=?, sort_key=? WHERE id=?', n, Number(n), r.id);
+      let res = null;
+      if (!r.deleted) {
+        const obj = this.game.setNumber(objs.get(r.id), Number(n));
+        const prev = occupant.get(n);
+        res = this.writeRev(pack, n, canon(obj), user, 'relevel', {
+          message: `đổi số level ${r.name} → ${n}`, meta: { relevel_from: r.name, mode },
+          rev: Math.max(r.head_rev, prev ? prev.head_rev : 0) + 1,
+        });
+      }
+      this.audit(user, 'level.relevel', pack, n, res?.rev ?? null, { relevel_from: r.name, mode });
+      moves.push({ from: r.name, to: n, rev: res?.rev ?? null, deleted: !!r.deleted });
+    }
+    return moves;
+  }
+
+  /**
+   * Xếp lại cả bộ: `order` là tên các level còn sống theo thứ tự mới, các số (slot) của bộ giữ nguyên, level thứ i nhận
+   * số nhỏ thứ i. `base` là thứ tự client đang thấy: bộ đã đổi kể từ đó thì 409 kèm thứ tự hiện tại.
+   */
+  reorder(user, pack, order, base, dryRun = false) {
+    if (!Array.isArray(order) || !order.every(n => typeof n === 'string')) throw new ApiError(400, 'order phải là mảng tên level');
+    const run = () => {
+      const p = this.writable(pack, 'swap');
+      const alive = this.db.all('SELECT * FROM levels WHERE pack=? AND deleted=0 ORDER BY sort_key, name', pack);
+      const current = alive.map(r => r.name);
+      if (Array.isArray(base) && base.join() !== current.join()) {
+        throw new ApiError(409, 'Bộ vừa có người đổi số hoặc thêm / xoá level — tải lại rồi xếp lại', { order: current });
+      }
+      if (order.length !== current.length || new Set(order).size !== order.length || order.some(n => !current.includes(n))) {
+        throw new ApiError(400, 'order phải gồm đúng mỗi level còn sống của bộ một lần', { order: current });
+      }
+      const byName = new Map(alive.map(r => [r.name, r]));
+      const plan = order.map((n, i) => [byName.get(n), current[i]]).filter(([r, to]) => r.name !== to);
+      const locked = plan.map(([r]) => [r.name, this.lock(pack, r.name)]).filter(([, lk]) => lk && lk.holder !== user)
+        .map(([n, lk]) => ({ level: n, holder: lk.holder }));
+      if (dryRun) return { pack, dry_run: true, locked, moves: plan.map(([r, to]) => ({ from: r.name, to })) };
+      if (locked.length) throw new ApiError(423, `Level ${pack}/${locked[0].level} đang bị ${locked[0].holder} khoá`, { locked });
+      const moves = plan.length ? this.applyMoves(pack, p, plan, user, 'reorder') : [];
+      if (moves.length) this.audit(user, 'pack.reorder', pack, null, null, { moved: moves.length, before: current });
+      return { pack, mode: 'reorder', moves, before: current, author: user };
+    };
+    if (dryRun) return run();
+    const out = this.db.write(run);
+    if (out.moves.length) this.broker.publish('levels.renumbered', out);
     return out;
   }
 

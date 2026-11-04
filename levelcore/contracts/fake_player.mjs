@@ -1,7 +1,8 @@
 // Player WebGL giả để kiểm tay khung game khi chưa có bản Unity: zip có index.html nói đúng giao thức postMessage của
 // levelcore/web/js/webgame.mjs và Build/ thật (loader.js, .wasm.br nén Brotli) để server phục vụ như bản Unity.
 //   node levelcore/contracts/fake_player.mjs <zip ra> [id] [tag]     (mặc định id, tag của game mẫu: sample-game SAMPLE)
-// Trang hiện level vừa nhận và nguồn (bản đang mở / rN), báo lại level_start … src=<nguồn> để app kiểm đúng bản.
+// Trang hiện level vừa nhận và nguồn (bản đang mở / rN), báo lại level_start … src=<nguồn> để app kiểm đúng bản; chụp ảnh
+// (caps capture: vẽ JSON của level lên canvas) và gửi vài sự kiện nước đi có cấu trúc khi chơi.
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { createZip } from '../node/zip.mjs';
@@ -31,10 +32,23 @@ const script = (id, tag) => `(() => {
     if (method === 'LoadPack') { const p = JSON.parse(arg); pack = p.pack; levels = p.levels; source = p.source || 'draft'; post({ type: 'packLoaded' }); }
     else if (method === 'UpdateLevel') { const p = JSON.parse(arg); levels[p.level] = p.data; source = p.source || 'draft'; post({ type: 'packLoaded' }); }
     else if (method === 'PreviewLevel') show(Number(arg), 'preview');
-    else if (method === 'LoadLevel') show(Number(arg), 'play');
+    else if (method === 'LoadLevel') {
+      show(Number(arg), 'play');
+      post({ type: 'event', event: { type: 'move', step: 1, cell: [0, 0] } });
+      post({ type: 'event', event: { type: 'move', step: 2, cell: [1, 0] } });
+    }
     else if (method === 'Cheat') line('level_end ' + document.getElementById('what').textContent.split(' ')[2] + ' ' + (arg === 'win' ? 'win' : 'lose') + ' time=1 cheat=1');
+    else if (method === 'Capture') {
+      const c = document.createElement('canvas');
+      c.width = c.height = 160;
+      const g = c.getContext('2d');
+      g.fillStyle = '#1b2230'; g.fillRect(0, 0, 160, 160);
+      g.fillStyle = '#4b90ff'; g.font = '14px sans-serif';
+      document.getElementById('level').textContent.split('\\n').slice(0, 9).forEach((t, i) => g.fillText(t.trim().slice(0, 20), 8, 20 + i * 16));
+      post({ type: 'capture', png: c.toDataURL('image/png') });
+    }
   });
-  post({ type: 'ready' });
+  post({ type: 'ready', caps: ['capture'] });
 })();`;
 
 export function fakePlayerZip(id = 'sample-game', tag = 'SAMPLE') {

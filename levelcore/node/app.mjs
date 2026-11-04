@@ -4,14 +4,18 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { ACTIONS, Admin } from './admin.mjs';
 import { Auth, COOKIE_NAME, SESSION_TTL } from './auth.mjs';
 import * as bihub from './bihub.mjs';
 import { Ci, cleanMeta, MAX_LEVELS_ZIP } from './ci.mjs';
-import { isAdmin } from './config.mjs';
 import { DB } from './db.mjs';
 import { Broker } from './events.mjs';
+import { Housekeeping } from './housekeeping.mjs';
 import { ApiError, parseJson, queryBool, readBody, Router, sendBytes, sendJson, serveFile } from './http.mjs';
 import * as levelhub from './levelhub.mjs';
+import { Links } from './links.mjs';
+import { Plays } from './plays.mjs';
+import { MAX_THUMB_BYTES, Thumbs } from './thumbs.mjs';
 import { iso, now, parseTime, Store } from './store.mjs';
 import { Builds, CHUNK_BYTES, ChunkUploads, MAX_ZIP_BYTES, streamToFile } from './webgame.mjs';
 
@@ -49,6 +53,11 @@ export function createApp(game, s) {
   const builds = new Builds(s);
   const uploads = new ChunkUploads(builds);
   const ci = new Ci(s, db, store, broker, builds);
+  const admin = new Admin(s, db, store);
+  const plays = new Plays(db, store);
+  const links = new Links(db, store, admin);
+  const thumbs = new Thumbs(db, store);
+  const housekeeping = new Housekeeping(db, store, admin);
   store.ensureDefaultPacks();
 
   const pub = new URL(s.publicBase);
@@ -58,9 +67,7 @@ export function createApp(game, s) {
     writeOrigins.add(`http://127.0.0.1:${pub.port}`);
   }
 
-  const requireAdmin = (user, what) => {
-    if (!isAdmin(s, user)) throw new ApiError(403, `Chỉ admin được ${what}`);
-  };
+  const requireAdmin = (user, what) => admin.requireAdmin(user, what);
   const objectBody = async req => {
     const body = parseJson(await readBody(req, LEVEL_BODY_LIMIT));
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'Body phải là JSON object');
@@ -78,8 +85,12 @@ export function createApp(game, s) {
 
   const api = new Router();
   api.add('GET', '/api/me', ({ user }) => ({
-    email: user, dev: s.dev, lock_ttl: s.lockTtl, online: broker.online(), admin: isAdmin(s, user), runtime: 'node',
-    format_version: s.formatVersion, features: { levelhub: !!game.levelhub, bi: biConfigured, webgame: true },
+    email: user, dev: s.dev, lock_ttl: s.lockTtl, online: broker.online(), admin: admin.isAdmin(user), runtime: 'node',
+    format_version: s.formatVersion, rights: admin.rights(user), notice: admin.settings().notice,
+    features: {
+      levelhub: !!game.levelhub, bi: biConfigured, webgame: true,
+      plays: true, share: true, thumbs: true, reorder: true, trash: true, admin: true,
+    },
   }));
   api.add('GET', '/api/packs', () => store.listPacks());
   api.add('POST', '/api/packs', async ({ req, user }) => {
@@ -88,7 +99,8 @@ export function createApp(game, s) {
   });
   api.add('PATCH', '/api/packs/:pack', async ({ req, user, params }) => {
     const b = await objectBody(req);
-    if (b.production != null || b.archived != null) requireAdmin(user, 'đổi cờ production / lưu trữ');
+    if (b.production != null) admin.require(user, 'production');
+    if (b.archived != null) admin.require(user, 'archive');
     return store.updatePack(user, params.pack, b);
   });
   api.add('POST', '/api/packs/:pack/rename', async ({ req, user, params }) => store.renamePack(user, params.pack, (await objectBody(req)).to));
@@ -133,7 +145,7 @@ export function createApp(game, s) {
     const force = queryBool(url, 'force');
     if (force) {
       const l = store.lock(params.pack, params.name);
-      if (l && l.holder !== user) requireAdmin(user, 'phá khoá của người khác');
+      if (l && l.holder !== user) admin.require(user, 'breakLock');
     }
     return store.releaseLock(user, params.pack, params.name, force);
   });
@@ -215,6 +227,7 @@ export function createApp(game, s) {
     return group;
   });
   api.add('POST', '/api/packs/:pack/levelhub/upload', async ({ req, user, params }) => {
+    admin.require(user, 'levelhubUpload');
     const token = biToken(req);
     const body = await objectBody(req);
     const lreq = levelhub.parseRequest(params.pack, body);
@@ -266,19 +279,19 @@ export function createApp(game, s) {
   // ----- Bản game WebGL: bản đang dùng, bản chờ chọn, tải tay (admin) -----
   api.add('GET', '/api/game', () => builds.info());
   api.add('POST', '/api/game/uploads', async ({ req, user }) => {
-    requireAdmin(user, 'tải bản game lên');
+    admin.require(user, 'gameBuilds');
     return uploads.start(user, await objectBody(req));
   });
   api.add('PUT', '/api/game/uploads/:id/:i', async ({ req, user, params }) => {
-    requireAdmin(user, 'tải bản game lên');
+    admin.require(user, 'gameBuilds');
     return uploads.part(params.id, params.i, await readBody(req, CHUNK_BYTES + 1));
   });
   api.add('POST', '/api/game/uploads/:id/complete', ({ user, params }) => {
-    requireAdmin(user, 'tải bản game lên');
+    admin.require(user, 'gameBuilds');
     return uploads.complete(params.id, user);
   });
   api.add('POST', '/api/game/upload', async ({ req, user, url }) => {
-    requireAdmin(user, 'tải bản game lên');
+    admin.require(user, 'gameBuilds');
     const tmp = tempZip('single');
     try {
       await streamToFile(req, tmp, MAX_ZIP_BYTES);
@@ -292,13 +305,73 @@ export function createApp(game, s) {
     return { builds: builds.list(), levels: ci.receipts(), ci: { enabled: !!s.ciToken, branch: s.ciBranch || null, pack: ci.pack } };
   });
   api.add('POST', '/api/game/builds/:id/activate', ({ user, params }) => {
-    requireAdmin(user, 'chọn bản game');
+    admin.require(user, 'gameBuilds');
     return ci.activate(user, params.id);
   });
   api.add('DELETE', '/api/game/builds/:id', ({ user, params }) => {
-    requireAdmin(user, 'xoá bản game');
+    admin.require(user, 'gameBuilds');
     return ci.reject(user, params.id);
   });
+
+  // ----- Quản trị trong app, thùng rác -----
+  api.add('GET', '/api/admin/settings', ({ user }) => {
+    requireAdmin(user, 'xem cài đặt quản trị');
+    return { ...admin.settings(), actions: ACTIONS, env_admins: s.admins };
+  });
+  api.add('PUT', '/api/admin/settings', async ({ req, user }) => {
+    requireAdmin(user, 'sửa cài đặt quản trị');
+    const { version, ...patch } = await objectBody(req);
+    if (!Number.isInteger(version)) throw new ApiError(400, 'Cần version của cài đặt đang sửa');
+    return { ...admin.update(user, patch, version), actions: ACTIONS, env_admins: s.admins };
+  });
+  api.add('GET', '/api/admin/storage', ({ user }) => {
+    requireAdmin(user, 'xem dung lượng');
+    return admin.storage(builds);
+  });
+  api.add('POST', '/api/admin/backup', ({ user }) => {
+    requireAdmin(user, 'sao lưu database');
+    return admin.backup(user);
+  });
+  api.add('POST', '/api/admin/housekeeping', ({ user }) => {
+    requireAdmin(user, 'dọn thùng rác');
+    return housekeeping.run(user);
+  });
+  api.add('GET', '/api/trash', () => housekeeping.trash());
+
+  // ----- Xếp thứ tự cả bộ -----
+  api.add('POST', '/api/packs/:pack/reorder', async ({ req, user, params }) => {
+    admin.require(user, 'reorder');
+    const b = await objectBody(req);
+    return store.reorder(user, params.pack, b.order, b.base ?? null, b.dry_run === true);
+  });
+
+  // ----- Lượt chơi thử (dữ liệu cho phân tích / AI) -----
+  api.add('POST', '/api/plays', async ({ req, user }) => plays.start(user, await objectBody(req)));
+  api.add('POST', '/api/plays/:uid/events', async ({ req, user, params }) => plays.append(params.uid, await objectBody(req), user));
+  api.add('GET', '/api/plays/export', ({ url }) => ({
+    lines: plays.exportLines({ since: parseTime(url.searchParams.get('since')), pack: url.searchParams.get('pack') }),
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Content-Disposition': 'attachment; filename="plays.jsonl"' },
+  }));
+  api.add('GET', '/api/plays', ({ url }) => {
+    const q = k => url.searchParams.get(k);
+    return plays.list({ pack: q('pack'), level: q('level'), sha: q('sha'), user: q('user'), limit: q('limit') });
+  });
+  api.add('GET', '/api/plays/:id', ({ params }) => plays.detail(params.id));
+  api.add('GET', '/api/packs/:pack/playstats', ({ params }) => plays.stats(params.pack));
+
+  // ----- Link chơi thử trên điện thoại -----
+  api.add('POST', '/api/links', async ({ req, user }) => {
+    admin.require(user, 'shareLinks');
+    return reply(201, links.create(user, await objectBody(req)));
+  });
+  api.add('GET', '/api/links', ({ url }) => links.list({ pack: url.searchParams.get('pack'), level: url.searchParams.get('level') }));
+  api.add('DELETE', '/api/links/:token', ({ user, params }) => links.revoke(user, params.token));
+
+  // ----- Ảnh level -----
+  api.add('GET', '/api/packs/:pack/thumbs', ({ params }) => ({ have: thumbs.have(params.pack) }));
+  api.add('GET', '/api/thumbs/:sha', ({ params }) => thumbs.get(params.sha));
+  api.add('PUT', '/api/thumbs/:sha', async ({ req, user, params, url }) => (
+    thumbs.put(user, params.sha, req.headers['content-type'], await readBody(req, MAX_THUMB_BYTES), url.searchParams.get('source'))));
 
   api.add('GET', '/api/audit', ({ url }) => {
     const q = k => url.searchParams.get(k);
@@ -333,6 +406,11 @@ export function createApp(game, s) {
 
   function send(res, out) {
     if (out && out[REPLY]) return sendJson(res, out.status, out.data, out.headers);
+    if (out && out.lines) {
+      res.writeHead(200, out.headers);
+      for (const line of out.lines) res.write(line);
+      return res.end();
+    }
     if (out && out.bytes) return sendBytes(res, 200, out.bytes, out.headers);
     return sendJson(res, 200, out);
   }
@@ -368,6 +446,40 @@ export function createApp(game, s) {
     const file = gameWebFallback[rel];
     if (file && serveFile(res, path.dirname(file), path.basename(file), webHeaders)) return;
     if (rel === 'game.css') return sendBytes(res, 200, Buffer.alloc(0), { 'Content-Type': 'text/css; charset=utf-8', ...webHeaders });
+    if (rel === 'releases.json') return sendJson(res, 200, [], webHeaders);
+    throw new ApiError(404, 'Not Found');
+  }
+
+  // Trang chơi thử trên điện thoại: công khai, chỉ cần token còn hạn. /p/assets/* là file của trang, /p/<token>/game/* là
+  // bản game đang dùng, lượt chơi ghi với user link:<token>.
+  const phoneDir = path.join(coreWebDir, 'phone');
+  async function phone(req, res, url, p) {
+    if (p === '/p/assets/playrecorder.mjs' && serveFile(res, path.join(coreWebDir, 'js'), 'playrecorder.mjs', webHeaders)) return;
+    if (p.startsWith('/p/assets/') && req.method === 'GET' && serveFile(res, phoneDir, p.slice('/p/assets/'.length), webHeaders)) return;
+    const m = /^\/p\/([A-Za-z0-9_-]+)(\/.*)?$/.exec(p);
+    if (!m) throw new ApiError(404, 'Not Found');
+    const [, token, rest = '/'] = m;
+    if ((rest === '/' || rest === '') && req.method === 'GET') {
+      links.active(token);
+      if (serveFile(res, phoneDir, 'index.html', { ...webHeaders, 'Referrer-Policy': 'no-referrer' })) return;
+    }
+    if (rest === '/info' && req.method === 'GET') return sendJson(res, 200, links.info(token, game));
+    if (rest.startsWith('/game/') && (req.method === 'GET' || req.method === 'HEAD')) {
+      links.active(token);
+      if (builds.serve(req, res, safeDecode(rest.slice('/game/'.length)))) return;
+      throw new ApiError(404, 'Chưa có bản game WebGL trên tool');
+    }
+    const who = `link:${token}`;
+    if (rest === '/plays' && req.method === 'POST') {
+      links.active(token);
+      const b = parseJson(await readBody(req, LEVEL_BODY_LIMIT));
+      return sendJson(res, 200, plays.start(who, { ...b, source: 'link' }, { link: token, player: b?.player }));
+    }
+    const ev = /^\/plays\/([A-Za-z0-9_-]+)\/events$/.exec(rest);
+    if (ev && req.method === 'POST') {
+      links.active(token);
+      return sendJson(res, 200, plays.append(ev[1], parseJson(await readBody(req, LEVEL_BODY_LIMIT)) || {}, who));
+    }
     throw new ApiError(404, 'Not Found');
   }
 
@@ -392,6 +504,7 @@ export function createApp(game, s) {
       return sendBytes(res, 200, page.body, page.headers);
     }
     if (p === '/bi/login.js' && req.method === 'GET') return sendBytes(res, 200, bihub.loginScript(), { 'Content-Type': 'text/javascript; charset=utf-8' });
+    if (p.startsWith('/p/')) return phone(req, res, url, p);
     if (p.startsWith('/api/ci/')) {
       ci.checkToken(req);
       return dispatch(ciApi, req.method, p, { req, res, url });
@@ -437,6 +550,10 @@ export function createApp(game, s) {
       return sendJson(res, 500, { detail: `Lỗi server: ${e.message}` });
     });
   });
-  server.on('close', () => db.close());
+  server.on('close', () => {
+    housekeeping.stop();
+    db.close();
+  });
+  housekeeping.start();
   return { server, store, broker, db, builds, ci };
 }

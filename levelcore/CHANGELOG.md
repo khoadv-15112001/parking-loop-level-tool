@@ -6,18 +6,18 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 ## 0.2.0 · chưa phát hành · Hai server, game khai bằng manifest, CI và Level Hub
 
 ### Cần chú ý
-- Nhập level: level đã sửa trong tool không còn bị ghi đè; muốn ghi đè phải bật "Ghi đè" hoặc gọi `?force=true`.
-- Nhập level: file lỗi và level đang khoá được báo riêng trong kết quả, không còn chặn cả lượt nhập.
+- Nhập level: không ghi đè level đã sửa trong tool (bật "Ghi đè" nếu cần); file lỗi, level đang khoá báo riêng.
 - Game khai bằng manifest: `<PREFIX>_ADMINS` rỗng là không ai làm admin, trừ máy DEV. Plugin Python cũ giữ luật cũ.
 - Xuất Level Hub: Xuất và Đẩy lên BI dùng đúng bản lúc bấm Kiểm tra; đổi tham số thì phải Kiểm tra lại.
 - Nhận bản game và level từ Jenkins: thêm `<PREFIX>_CI_TOKEN` trên BI, cùng giá trị secret `LEVEL_TOOL_TOKEN` của Jenkins.
+- Server Node: level đã xoá và bộ lưu trữ bị xoá hẳn sau 30 ngày (đổi ở Quản trị); lưu trữ bộ phải ghi lý do.
 
 ### Mới
 - Game mới: `new_game.mjs` chỉ sinh manifest, luật JS, test; core dựng giao diện, game muốn riêng thì khai `app`.
-- Server Node `levelcore/node` đủ route như server Python; test hợp đồng chung: `node levelcore/contracts/run.mjs`.
-- Bản game từ Jenkins: nhánh theo dõi lên ngay kèm level của lần chạy, nhánh khác chờ admin chọn ở ⬆ Bản game.
-- Chơi thử: ▶ Chơi rN trong Lịch sử chơi đúng revision đó; khung game ghi rõ đang chơi bản nào.
-- Có gì mới: bảng trong app đọc `game/web/releases.json`, test kiểm khung changelog cho game và core.
+- Server Node đủ route như server Python; bản game từ Jenkins: nhánh theo dõi lên ngay, nhánh khác chờ admin chọn.
+- Chơi thử: link + QR cho điện thoại, ▶ Chơi rN trong Lịch sử, mọi lượt chơi được lưu (xuất JSONL cho phân tích, AI).
+- Bộ level: Xếp thứ tự (kéo thả, ghim, hoàn tác), Tổng quan bộ (biểu đồ, cảnh báo, so 3 bộ), lưới ảnh level.
+- Thùng rác, Quản trị trong app (quyền theo việc, thông báo chung, sao lưu), phím tắt đổi được, bảng Có gì mới.
 
 ### Thay đổi
 - Tìm level theo số, dải `10-20`, danh sách `2,5,9` và chữ không dấu; form thuộc tính từ `fields` của game.
@@ -27,8 +27,8 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Bản game: giữ một bản trước để quay lại; gửi lại cùng bản build không cài lần hai.
 
 ### Cho Dev
-- Route: `/api/ci/*` (token CI), `/api/game/builds`, `snapshot` trong `levelhub/*`; `/api/me` thêm `features`, `runtime`.
-- Biến `<PREFIX>_CI_TOKEN|CI_BRANCH|CI_PACK`; manifest thêm `slug`, `storagePrefix`, `webgame`, `app`.
-- DB: bảng `ci_levels`; revision mới ghi `formatVersion` vào `meta.format` (API `format`, revision cũ là `null`).
-- Khung game gửi `source` (`draft` | `rN`) trong LoadPack / UpdateLevel; bridge ghi `src=` ở `level_start` để app kiểm.
+- Route mới (chỉ server Node): `/api/plays*`, `/api/links*`, `/p/<token>*`, `/api/thumbs/*`, `/reorder`, `/api/admin/*`.
+- Biến `<PREFIX>_CI_TOKEN|CI_BRANCH|CI_PACK`; manifest thêm `slug`, `storagePrefix`, `webgame`, `app`, `overview`.
+- DB: bảng `ci_levels`, `settings`, `plays`, `play_events`, `share_links`, `thumbs`; revision ghi `formatVersion`.
+- Bridge: `ready {caps: ['capture']}`, lệnh `Capture`, sự kiện `{type: 'event'}` vào lượt chơi, `src=` ở `level_start`.
 - Mới: `deploy/Dockerfile.node`, `RUNTIME` trong `game.env`, `AGENTS.md`, skill `levelcore-new-game`; bỏ template plugin.

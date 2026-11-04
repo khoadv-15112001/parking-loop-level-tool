@@ -7,12 +7,17 @@
 //     UpdateLevel {pack, level, data, source} đúng 1 level (chọn level khác, sửa bản nháp) — gửi cả bộ mỗi lần từng làm hết bộ nhớ
 //     source = "draft" (bản đang mở, có thể chưa lưu) | "r<số>" (revision chọn trong Lịch sử). Game ghi lại trong dòng
 //     level_start (… src=<source>) thì app kiểm game đang chơi đúng bản đã gửi.
+//     Capture                         chụp màn đang xem → game trả {type:'capture', png:'data:image/png;base64,…'}
+//   game → app thêm: ready {caps: ['capture']} (khả năng của bản game), event {event: {...}} (sự kiện có cấu trúc, vd nước đi,
+//     ghi vào lượt chơi), capture {png | error}.
+// Mỗi lượt chơi (level_start → level_end) được ghi lên server kèm dòng log và sự kiện (playrecorder.mjs) khi server có.
 //     PreviewLevel n | LoadLevel n    xem (đứng yên, thấy cả level) | chơi thử
 //     Highlight propId                làm nổi prop cùng loại (rỗng = bỏ)
 //     SetOptions json | Cheat action
 //   game → app  {source:<id>, type:'ready'|'packLoaded'|'line', line:'[<TAG>] …'}
 // Luồng: ready → LoadPack → packLoaded → PreviewLevel N → preview_ready; chọn level / sửa: UpdateLevel → packLoaded → …
-import { api } from './api.mjs';
+import { api, authHeaders } from './api.mjs';
+import { PlayRecorder } from './playrecorder.mjs';
 import { $, confirmDialog, esc, openDialog, toast } from './ui.mjs';
 
 const ORIGIN = location.origin;
@@ -22,6 +27,9 @@ const INFO_TTL = 60_000;
 let g = null;           // khung game đang gắn: {el, iframe, ready, pending, want, pack, levels, phase, mode, queued, highlight}
 let dock = null;        // phần tử chứa khung game (cột preview)
 let info = null, infoAt = 0;
+let recorder = null;    // ghi lượt chơi (server có tính năng plays)
+let captureWaiter = null;
+const previewWaiters = new Map();   // số level → [resolve] chờ preview_ready (chụp ảnh hàng loạt)
 let proto = { id: 'leveltool-game', tag: 'LEVELTOOL', title: 'Game — xem / chơi level', buildHint: '' };   // mountDock đặt lại
 
 /** Dòng giao thức "[<TAG>] <cmd> <args…> k=v…" → {cmd, args, kv, rest}. */
@@ -76,6 +84,7 @@ function onMessage(e) {
   if (!d || d.source !== proto.id) return;
   if (d.type === 'ready') {
     g.ready = true;
+    g.caps = Array.isArray(d.caps) ? d.caps.map(String) : [];
     if (g.pending) { send('LoadPack', g.pending); g.pending = null; status('Đang nạp bộ level vào game…'); }
     else status('Game sẵn sàng');
   } else if (d.type === 'packLoaded') {
@@ -84,12 +93,19 @@ function onMessage(e) {
       g.phase = 'loading';
       status(`Đang ${verb()} level ${g.want}…`);
     }
+  } else if (d.type === 'event') {
+    if (d.event && typeof d.event === 'object') recorder?.event({ type: 'event', ...d.event });
+  } else if (d.type === 'capture') {
+    onCapture(d);
   } else if (d.type === 'line') {
     const p = parseLine(d.line);
     if (!p) return;
+    if (g.phase === 'play' || p.cmd === 'level_end') recorder?.event({ line: d.line });
     const n = Number(p.args[0]);
     if (p.cmd === 'preview_ready') {
       g.phase = 'ready';
+      for (const resolve of previewWaiters.get(n) || []) resolve();
+      previewWaiters.delete(n);
       if (afterSettled()) return;
       status(`Level ${n} · ${p.kv.props ?? '?'} prop · sửa level hoặc bấm 👁 ở target để làm nổi prop`, 'ok');
       if (g.highlight) send('Highlight', g.highlight);
@@ -98,8 +114,15 @@ function onMessage(e) {
     } else if (p.cmd === 'level_start') {
       if (n !== g.want) status(`Game đang ở level ${n} — chờ mở level ${g.want}…`);
       else if (p.kv.src && p.kv.src !== g.source) status(`Game đang chơi level ${n} · ${sourceLabel(p.kv.src)}, không phải ${sourceLabel(g.source)} vừa gửi`, 'warn');
-      else { g.phase = 'play'; status(`Đang chơi level ${n} · ${sourceLabel(g.source)}${p.kv.src ? ' ✓' : ''}`, 'ok'); afterSettled(); }
+      else {
+        g.phase = 'play';
+        status(`Đang chơi level ${n} · ${sourceLabel(g.source)}${p.kv.src ? ' ✓' : ''}`, 'ok');
+        recorder?.start({ pack: g.pack, level: String(n), rev: g.rev, source: g.source, level_data: g.levels[n], build: info?.id ?? null });
+        recorder?.event({ line: d.line });
+        afterSettled();
+      }
     } else if (p.cmd === 'level_end') {
+      recorder?.end({ result: p.args[1], summary: p.kv });
       g.results.push({ level: n, outcome: p.args[1], kv: p.kv });
       renderResults();
       const [label] = OUTCOME[p.args[1]] || [p.args[1]];
@@ -150,6 +173,7 @@ function build() {
     }
     if (act === 'reload') return reload();
     if (!g.ready) return toast('Game chưa sẵn sàng');
+    recorder?.markCheat();
     send('Cheat', act);
   });
   $('.wg-speed', el).addEventListener('change', e => g.ready && send('SetOptions', JSON.stringify({ speed: Number(e.target.value) })));
@@ -202,7 +226,42 @@ function showMissing() {
 /** opts = game.webgame {id, tag, title, buildHint} (game/web/game.mjs). */
 export function mountDock(container, opts = {}) {
   dock = container;
-  proto = { ...proto, ...opts };
+  const { record, ...protocol } = opts;
+  proto = { ...proto, ...protocol };
+  recorder = record ? new PlayRecorder('/api', authHeaders) : null;
+}
+
+function onCapture(d) {
+  captureWaiter?.(d);
+  captureWaiter = null;
+}
+
+/** Bản game đang mở chụp được ảnh (bridge khai caps: ['capture'] trong ready). */
+export const canCapture = () => !!g?.ready && !!g.caps?.includes('capture');
+
+/** Chụp màn đang xem trong khung game, trả data URL PNG. */
+export function captureNow(timeoutMs = 8000) {
+  if (!canCapture()) return Promise.reject(new Error('Bản game này chưa hỗ trợ chụp ảnh (bridge chưa khai caps capture)'));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { captureWaiter = null; reject(new Error('Game không trả ảnh')); }, timeoutMs);
+    captureWaiter = d => {
+      clearTimeout(timer);
+      if (typeof d.png === 'string' && d.png.startsWith('data:image/')) resolve(d.png);
+      else reject(new Error(d.error || 'Game không chụp được'));
+    };
+    send('Capture', '');
+  });
+}
+
+/** Xem level rồi chụp (chụp ảnh hàng loạt): đợi game dựng xong (preview_ready) mới chụp. */
+export async function captureLevel(pack, n, data, timeoutMs = 20000) {
+  const ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Game không dựng xong level ${n}`)), timeoutMs);
+    previewWaiters.set(Number(n), [...(previewWaiters.get(Number(n)) || []), () => { clearTimeout(timer); resolve(); }]);
+  });
+  await showLevel(pack, n, data, 'preview');
+  await ready;
+  return captureNow();
 }
 
 /**
@@ -211,11 +270,12 @@ export function mountDock(container, opts = {}) {
  * Đổi bộ → LoadPack chỉ chứa level này (game xoá file level cũ của bộ trước); cùng bộ → UpdateLevel.
  * source: "draft" = bản đang mở (có thể chưa lưu), "r<số>" = revision chọn trong Lịch sử.
  */
-export async function showLevel(pack, n, data, mode = 'preview', source = 'draft') {
+export async function showLevel(pack, n, data, mode = 'preview', source = 'draft', rev = null) {
   if (!dock) return;
   if (!(await available())) { close(); return showMissing(); }
   if (!g) build();
   g.highlight = null;
+  g.rev = rev;
   if (g.levels && g.pack === pack) {
     if (busy()) { g.queued = { n, data, mode, source }; return; }
     setMode(mode);

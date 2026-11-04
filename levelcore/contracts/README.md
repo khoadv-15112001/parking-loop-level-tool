@@ -48,6 +48,43 @@ Test riêng từng server (phần cần chỉnh đồng hồ, giao diện riêng
 
 Web đọc `features` trong `/api/me` để ẩn nút của tính năng server không có. Server cũ không trả `features` thì coi như đủ.
 
+## Chỉ có ở server Node
+
+Server Python giữ đủ các route ở bảng trên cho game cũ; các tính năng dưới đây chỉ có ở server Node (`features.plays`,
+`share`, `thumbs`, `reorder`, `trash`, `admin` là `true`). Tổng quan bộ và phím tắt chạy trên web nên có ở cả hai.
+Test: `v1/tools.test.mjs` (bỏ qua khi chạy với Python), `levelcore/node/tests/trash.test.mjs`.
+
+| Route | |
+| --- | --- |
+| `POST /api/plays` `{uid, pack, level, rev, source, level_data, build, client}` | bắt đầu lượt chơi (cùng `uid` gửi lại trả lượt đã có) |
+| `POST /api/plays/{uid}/events` `{events: [...], end?: {result, duration_ms, cheat, summary}}` | gửi sự kiện theo lô, kết thúc lượt |
+| `GET /api/plays?pack&level&sha&user&limit`, `GET /api/plays/{id}` (kèm `level_data`, `event_list`) | xem lượt chơi |
+| `GET /api/plays/export?since&pack` | JSONL, mỗi dòng `{play, level, events}`: dữ liệu cho solver / AI |
+| `GET /api/packs/{pack}/playstats` | theo sha nội dung: số lượt, thắng, thua, thời gian trung vị (bỏ lượt cheat) |
+| `POST /api/links` `{pack, level, rev? \| level_data?, days?, name?}`, `GET /api/links?pack&level`, `DELETE /api/links/{token}` | link chơi trên điện thoại |
+| `GET /p/{token}`, `/p/{token}/info`, `/p/{token}/game/*`, `POST /p/{token}/plays[/{uid}/events]` | trang điện thoại, công khai, chỉ cần token còn hạn (404 / 410) |
+| `GET /api/packs/{pack}/thumbs`, `GET/PUT /api/thumbs/{sha}?source=capture\|render` | ảnh level theo sha nội dung (PNG / JPEG / WebP / SVG, ≤ 2 MB) |
+| `POST /api/packs/{pack}/reorder` `{order, base, dry_run}` | xếp lại cả bộ: slot giữ nguyên, `base` khác thứ tự hiện tại thì 409 |
+| `GET /api/trash`, `POST /api/admin/housekeeping` | thùng rác; dọn hẳn những gì quá `trashDays` |
+| `GET/PUT /api/admin/settings` (kèm `version`, cũ thì 409), `GET /api/admin/storage`, `POST /api/admin/backup` | quản trị |
+
+Quyền theo việc (`permissions` trong Quản trị, `rights` trong `/api/me`): `production`, `archive`, `breakLock`, `gameBuilds`,
+`levelhubUpload`, `shareLinks`, `reorder`; mỗi việc `admin` hoặc `everyone`. Admin = `<PREFIX>_ADMINS` cộng danh sách thêm
+trong app; cả hai rỗng thì chỉ máy DEV. Lưu trữ bộ nhận thêm `archive_reason`. Level đã xoá và bộ lưu trữ quá `trashDays`
+(mặc định 30) bị xoá hẳn sau khi chép ra `<data>/purged/<ngày>/`; lượt chơi giữ mãi cùng nội dung level đã chơi.
+
+### Bridge của bản WebGL
+
+Ngoài các lệnh ở `levelcore/web/js/webgame.mjs`, bản game nên có để tool ghi được dữ liệu:
+
+- `ready` kèm `caps: ['capture']` nếu chụp được màn đang xem; app gửi `Capture`, game trả
+  `{source, type: 'capture', png: 'data:image/png;base64,…'}` (hoặc `error`). Dùng cho ảnh level.
+- `{source, type: 'event', event: {...}}` cho mỗi nước đi / sự kiện có ý nghĩa (≤ 4 KB, tối đa 20 000 mỗi lượt). Tool ghi
+  vào lượt chơi đang chạy (từ dòng `level_start` tới `level_end`), cùng mọi dòng log `[TAG] …` trong lượt.
+- Dòng `level_start <n> src=<source>` để app xác nhận đúng bản (`draft`, `r<số>`, `link`).
+
+Trang điện thoại dùng cùng giao thức, với `source: 'link'`.
+
 ## Giao diện riêng của game
 
 Manifest có `"app": "<thư mục>"` thì `/app/` phục vụ thư mục đó thay vỏ của core: game tự làm giao diện, không theo bố
@@ -141,6 +178,7 @@ có trong file thì giữ nguyên.
 Bắt buộc: `tool`, `game`, `prefix`, `rules`. `web` (mặc định thư mục chứa `rules`) phục vụ ở `/app/game/`, trình duyệt
 đọc được mọi file trong đó. Không có `web/game.mjs` thì core dựng nó từ manifest (`slug`, `storagePrefix`, `webgame`) và
 module luật (`fields`). `app` là giao diện riêng của game (bỏ thì dùng vỏ của core). `web/releases.json` là bảng Có gì mới.
+`overview: {group, metric}` chọn khoá tóm tắt mặc định để chia nhóm và vẽ đường ở Tổng quan bộ, Xếp thứ tự.
 
 ### Module luật (`rules`)
 
@@ -158,6 +196,7 @@ core dùng mặc định ở cột cuối.
 | `describeHub` | `(level, n) → {mechanics, difficulty, uniqueColor, totalBlock, time, obstacleCounts: {khoá: số}}` | metadata Level Hub | các giá trị 0 / rỗng |
 | `hubLayout` | `(level) → string` | cột `layout` của Level Hub | `""` |
 | `fields` | mảng `{path, label, type, options?, min?, max?, step?, hint?}` | form tab Tổng quan (vỏ của core) | không có form |
+| `thumbnail` | `(level) → string` SVG, chỉ chạy trên trình duyệt | ảnh ở lưới level khi chưa có ảnh chụp từ bản game | không có ảnh |
 
 `fields`: `path` là mảng khoá / chỉ số (`['settings', 'time']`, `['goals', 0, 'count']`) hoặc chuỗi có dấu chấm
 (`'time'`, `'goals.0.count'`); `type` là `number`, `text`,

@@ -41,7 +41,10 @@ Game cần core làm thêm việc gì thì thêm điểm mở rộng ở repo co
 - Game muốn giao diện riêng thì tự thiết kế cho đúng cách GD làm việc với game đó: thư mục riêng (vd `game/app/`), khai
   `"app": "app"` trong manifest. Khi đó `/app/` là giao diện của game; module không có bố cục của core import ở
   `/core/js/`: `api.mjs` (gọi `setStoragePrefix` trước), `sync.mjs` (SSE, khoá), `query.mjs` (tìm theo số, dải, chữ không
-  dấu), `fields.mjs`, `webgame.mjs` (khung game WebGL), `levelhub_bi.mjs`, `biauth.mjs`, `releases.mjs`.
+  dấu), `fields.mjs`, `webgame.mjs` (khung game WebGL), `playrecorder.mjs` (ghi lượt chơi), `keymap.mjs`, `overview.mjs`,
+  `reorder.mjs`, `share.mjs`, `gallery.mjs`, `levelhub_bi.mjs`, `biauth.mjs`, `releases.mjs`.
+- Bridge của bản WebGL nên khai `caps: ['capture']` (ảnh level) và gửi `{type: 'event'}` cho mỗi nước đi: dữ liệu lượt
+  chơi dùng cho phân tích, solver, AI về sau (`levelcore/contracts/README.md`, mục Bridge).
 - Giao diện riêng vẫn phải giữ các luồng an toàn của core: khoá khi sửa, lưu với `If-Match`, xử lý 412 (xung đột) và 423
   (đang khoá), nhập qua bước xem trước.
 

@@ -22,6 +22,8 @@ export default {
   validateLevel: rules.validateLevel,
   blankLevel: rules.blankLevel,
   fields: rules.fields || [],
+  thumbnail: rules.thumbnail || null,
+  overview: manifest.overview || {},
   searchText: summary => summaryText(summary),
   listItem: summary => ({ tags: '', sub: esc(summaryText(summary)) }),
 };

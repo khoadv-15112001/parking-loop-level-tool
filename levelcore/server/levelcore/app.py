@@ -455,6 +455,8 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
                 return FileResponse(f, media_type=web_types.get(f.suffix, "application/octet-stream"))
             if name == "game.css":
                 return Response("", media_type="text/css")
+            if name == "releases.json":
+                return JSONResponse([])
             raise ApiError(404, "Not Found")
 
         # trước /app; repo core không có game/ (check_dir=False: chỉ 404)

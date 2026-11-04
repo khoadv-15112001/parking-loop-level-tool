@@ -211,3 +211,47 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .col-game > .game-dock, .col-game .webgame { min-width: 0; max-width: 100%; }
 .webgame .wg-head { min-width: 0; }
 .webgame .wg-head > button { flex: none; }
+
+/* Dải thông báo chung (Quản trị) */
+.notice { padding: 6px 12px; background: var(--lc-sel); border-bottom: 1px solid var(--lc-border); font-size: 13px; }
+.notice.warn { color: var(--lc-warn); }
+/* Hộp rộng: bảng, biểu đồ, xếp thứ tự */
+.dialog.wide { width: min(1100px, 100%); }
+.dialog h4 { margin: 8px 0 2px; font-size: 13px; }
+.dialog table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.dialog td, .dialog th { padding: 3px 6px; border-bottom: 1px solid var(--lc-surface-2); text-align: left; vertical-align: top; }
+.dialog input:not([type=checkbox]), .dialog select, .dialog textarea { font: inherit; }
+/* Danh sách dạng lưới ảnh */
+.list-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 10px; }
+button.active { border-color: var(--lc-accent); color: var(--lc-accent); }
+.level-list.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; padding: 6px; align-content: start; }
+.level-list.grid li { display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid var(--lc-surface-2); border-radius: 8px; }
+.level-list.grid .thumb { aspect-ratio: 1; display: grid; place-items: center; background: var(--lc-surface-2); border-radius: 6px; overflow: hidden; }
+.level-list.grid .thumb img, .level-list.grid .thumb svg { width: 100%; height: 100%; object-fit: contain; }
+/* Xếp thứ tự, tổng quan */
+.ro-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; }
+.ro-tools label.inline { display: flex; align-items: center; gap: 4px; }
+.ro-tools input[type=number] { width: 6em; }
+.ro-list { list-style: none; margin: 0; padding: 0; max-height: 52vh; overflow: auto; border: 1px solid var(--lc-border); border-radius: 8px; }
+.ro-list li { display: grid; grid-template-columns: 48px 70px 1fr 120px 32px; gap: 6px; align-items: center; padding: 3px 8px;
+  border-bottom: 1px solid var(--lc-surface-2); cursor: grab; user-select: none; }
+.ro-list li.sel { background: var(--lc-sel); }
+.ro-list li.moved .slot { color: var(--lc-accent); font-weight: 600; }
+.ro-list .slot { font-variant-numeric: tabular-nums; }
+.ro-list .sum { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ro-list .bar { height: 6px; width: var(--w); background: var(--lc-accent); border-radius: 3px; opacity: .7; }
+.ro-list button { padding: 0 4px; }
+svg.chart { width: 100%; height: auto; color: var(--lc-text); }
+svg.chart circle { cursor: pointer; }
+/* Link chơi thử, phím tắt, lượt chơi */
+.share-out { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.share-out img.qr { width: 180px; height: 180px; image-rendering: pixelated; background: #fff; border-radius: 6px; }
+.share-out input { width: 100%; }
+.share-out > div { flex: 1; min-width: 220px; display: grid; gap: 6px; }
+table.km kbd, kbd { font: 12px ui-monospace, monospace; padding: 1px 6px; border: 1px solid var(--lc-border); border-radius: 4px;
+  background: var(--lc-surface-2); }
+table.km th { padding-top: 10px; }
+ul.plays { margin: 0; padding-left: 18px; }
+ul.plays li { cursor: pointer; }
+ul.plays li:hover { text-decoration: underline; }
+table.events code { white-space: pre-wrap; word-break: break-all; }

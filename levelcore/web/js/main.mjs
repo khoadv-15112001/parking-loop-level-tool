@@ -9,13 +9,22 @@ import {
 import { diffPaths, renderFields } from './fields.mjs';
 import { parseLevelQuery, queryMatches } from './query.mjs';
 import { $, $$, confirmDialog, esc, fmtTime, openDialog, shortUser, toast } from './ui.mjs';
-import { highlight as gameHighlight, isPreviewing, mountDock, onBuildEvent, refreshPreview, showLevel } from './webgame.mjs';
+import { canCapture, highlight as gameHighlight, isPreviewing, mountDock, onBuildEvent, refreshPreview, showLevel } from './webgame.mjs';
 import * as sync from './sync.mjs';
 import { mountWhatsNew } from './whatsnew.mjs';
+import { openAdmin } from './adminui.mjs';
+import { captureMissing, invalidate as invalidateThumbs, renderGrid } from './gallery.mjs';
+import { actionFor, bridgeMouseButtons, configureKeymap, openShortcuts } from './keymap.mjs';
+import { openOverview } from './overview.mjs';
+import { renderPlays } from './playsview.mjs';
+import { openReorder } from './reorder.mjs';
+import { openShare } from './share.mjs';
+import { openTrash } from './trash.mjs';
 import game from '../game/game.mjs';
 
 setStoragePrefix(game.storagePrefix);
 const PACK_KEY = `${game.storagePrefix}.pack`;
+const GRID_KEY = `${game.storagePrefix}.grid`;
 const THEME_KEY = `${game.storagePrefix}.theme`;
 
 const state = {
@@ -38,6 +47,16 @@ const state = {
 const clone = o => JSON.parse(JSON.stringify(o));
 /** Tính năng server có (GET /api/me features); server cũ không trả → coi như có đủ. */
 const features = () => ({ levelhub: true, bi: true, webgame: true, ...(state.me?.features || {}) });
+/** Quyền theo việc (server Node); server cũ chỉ có cờ admin. */
+const can = action => state.me?.rights?.[action] ?? !!state.me?.admin;
+let gridMode = (() => { try { return localStorage.getItem(GRID_KEY) === '1'; } catch { return false; } })();
+
+function showNotice(n) {
+  const el = $('#notice');
+  el.hidden = !n?.text;
+  el.textContent = n?.text || '';
+  el.className = `notice ${n?.level === 'warn' ? 'warn' : ''}`;
+}
 const packInfo = () => state.packs.find(p => p.name === state.pack);
 const packReadOnly = () => { const p = packInfo(); return !p || p.archived || p.production; };
 
@@ -78,7 +97,14 @@ async function boot() {
   $('#btn-levelhub').hidden = !features().levelhub;
   if (!state.bi.configured) $('#btn-levelhub-bi').title = 'Chưa kết nối BI Level Hub — bấm để xem cách cấu hình';
   wire();
-  if (features().webgame) mountDock($('#game-dock'), game.webgame);
+  configureKeymap({ storagePrefix: game.storagePrefix, scopes: game.shortcutScopes || [], actions: game.shortcuts || [] });
+  bridgeMouseButtons();
+  $('#btn-reorder').hidden = !features().reorder;
+  $('#btn-trash').hidden = !features().trash;
+  $('#btn-admin').hidden = !(features().admin && state.me.admin);
+  $('#btn-share').hidden = !(features().share && features().webgame);
+  showNotice(state.me.notice);
+  if (features().webgame) mountDock($('#game-dock'), { ...game.webgame, record: features().plays === true });
   else {
     $('#game-dock').innerHTML = '<p class="muted small dock-off">Server này chưa có chơi thử bằng bản WebGL của game.</p>';
     $('#btn-play').hidden = true;
@@ -267,6 +293,16 @@ function renderList() {
   });
   $('#list-stats').textContent = `${items.length} / ${state.levels.length} level`
     + (state.invalid.size ? ` · ${state.invalid.size} lỗi kiểm định` : '');
+  $('#level-list').classList.toggle('grid', gridMode);
+  $('#btn-grid').classList.toggle('active', gridMode);
+  $('#btn-capture').hidden = !(gridMode && features().thumbs && canCapture());
+  if (gridMode) {
+    renderGrid($('#level-list'), state.pack, items, {
+      cls: lv => `${lv.name === state.sel ? 'sel' : ''} ${state.invalid.has(lv.name) ? 'invalid' : ''}`,
+      html: lv => `<span class="num">${esc(lv.name)}</span>${lv.lock ? ` <span class="badge warn">🔒</span>` : ''}${state.invalid.has(lv.name) ? ' <span class="badge err">lỗi</span>' : ''}`,
+    }, { thumbs: features().thumbs === true, thumbnail: game.thumbnail || null }).catch(e => toast(e.message, 'err'));
+    return;
+  }
   $('#level-list').innerHTML = items.map(lv => {
     const it = game.listItem?.(lv.summary || {}) || {};
     const lock = lv.lock ? `<span class="badge warn" title="Đang sửa">🔒 ${esc(shortUser(lv.lock.holder))}</span>` : '';
@@ -586,14 +622,14 @@ async function showInGame(mode = 'preview') {
   }
   const pack = state.pack;
   previewKey = visualKey(state.draft);
-  await showLevel(pack, state.sel, clone(state.draft), mode);   // chỉ level này — không tải cả bộ
+  await showLevel(pack, state.sel, clone(state.draft), mode, 'draft', state.cur?.rev ?? null);   // chỉ level này — không tải cả bộ
 }
 
 /** ▶ Chơi rN (Lịch sử): chơi đúng revision đã chọn để tái hiện lỗi, bản đang mở giữ nguyên. */
 async function playRevision(rev) {
   const r = await api.revision(state.pack, state.sel, rev);
   if (!r.level) return toast(`r${rev} là bản xoá, không có nội dung để chơi`, 'err');
-  await showLevel(state.pack, state.sel, r.level, 'play', `r${rev}`);
+  await showLevel(state.pack, state.sel, r.level, 'play', `r${rev}`, rev);
 }
 
 async function promote() {
@@ -675,6 +711,8 @@ async function renderHistory() {
   for (const b of $$('[data-play]', ul)) {
     b.addEventListener('click', () => playRevision(Number(b.dataset.play)).catch(e => toast(e.message, 'err')));
   }
+  $('#plays-box').hidden = !features().plays;
+  if (features().plays) renderPlays($('#plays-list'), state.pack, state.sel, state.cur?.rev).catch(e => { $('#plays-list').textContent = e.message; });
   for (const b of $$('[data-view]', ul)) {
     b.addEventListener('click', async () => {
       const r = await api.revision(state.pack, state.sel, Number(b.dataset.view));
@@ -723,15 +761,21 @@ async function packMenu() {
     <div class="grid2"><label>Đổi tên<input id="pm-rename" value="${esc(p.name)}"></label>
     <label>Nền tảng<select id="pm-platform">${['android', 'ios', 'both'].map(x => `<option ${x === p.platform ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     <label>Nhóm<input id="pm-group" value="${esc(p.group)}"></label>
-    <label class="check"><input id="pm-prod" type="checkbox" ${p.production ? 'checked' : ''} ${state.me.admin ? '' : 'disabled'}> Production</label>
-    <label class="check"><input id="pm-arch" type="checkbox" ${p.archived ? 'checked' : ''} ${state.me.admin ? '' : 'disabled'}> Lưu trữ (chỉ đọc)</label></div>
+    <label class="check"><input id="pm-prod" type="checkbox" ${p.production ? 'checked' : ''} ${can('production') ? '' : 'disabled'}> Production</label>
+    <label class="check"><input id="pm-arch" type="checkbox" ${p.archived ? 'checked' : ''} ${can('archive') ? '' : 'disabled'}> Lưu trữ (chỉ đọc)</label></div>
+    ${features().trash && !p.archived ? '<label>Lý do lưu trữ (bắt buộc khi lưu trữ; bộ lưu trữ bị xoá hẳn sau số ngày ở Thùng rác)<input id="pm-reason" maxlength="300"></label>' : ''}
     <label>Mô tả<input id="pm-desc" value="${esc(p.description)}"></label>`;
   const res = await openDialog({
     title: `Bộ ${p.name}`, html, actions: [{ label: 'Huỷ', value: null }, {
       label: 'Lưu', primary: true, onClick: async dlg => {
         const patch = { platform: $('#pm-platform', dlg).value, group: $('#pm-group', dlg).value,
           description: $('#pm-desc', dlg).value };
-        if (state.me.admin) Object.assign(patch, { production: $('#pm-prod', dlg).checked, archived: $('#pm-arch', dlg).checked });
+        if (can('production')) patch.production = $('#pm-prod', dlg).checked;
+        if (can('archive')) patch.archived = $('#pm-arch', dlg).checked;
+        if (patch.archived && !p.archived && features().trash) {
+          patch.archive_reason = $('#pm-reason', dlg)?.value.trim() || '';
+          if (patch.archive_reason.length < 3) throw new Error('Ghi lý do lưu trữ bộ');
+        }
         await api.updatePack(p.name, patch);
         const to = $('#pm-rename', dlg).value.trim();
         if (to && to !== p.name) await api.renamePack(p.name, to);
@@ -910,6 +954,53 @@ function showBiSetup() {
 
 // ───────────────────────────── realtime ─────────────────────────────
 
+function share() {
+  if (!state.sel) return toast('Mở một level trước');
+  return openShare({ pack: state.pack, name: state.sel, rev: state.cur?.rev, draft: clone(state.draft), dirty: state.dirty });
+}
+
+function overview() {
+  return openOverview({
+    pack: state.pack, packs: state.packs, config: game.overview || {}, features: features(), onOpenLevel: n => openLevel(n),
+  });
+}
+
+async function reorder() {
+  if (state.dirty) return toast('Lưu hoặc bỏ thay đổi của level đang mở trước khi xếp lại', 'err');
+  await openReorder({
+    pack: state.pack, levels: state.levels, readOnly: packInfo()?.archived, metricDefault: game.overview?.metric,
+    onApplied: async () => {
+      await loadLevels();
+      if (state.sel) await openLevel(state.sel, { force: true });
+    },
+  });
+}
+
+const stepLevel = d => {
+  const i = state.levels.findIndex(l => l.name === state.sel) + d;
+  if (state.levels[i]) return openLevel(state.levels[i].name);
+};
+
+/** Lệnh của phím tắt (keymap.mjs); game thêm lệnh của mình qua game.shortcuts + game.onShortcut. */
+const ACTIONS_RUN = {
+  'global.search': () => $('#search').focus(),
+  'global.newLevel': () => newLevel(),
+  'global.overview': () => overview(),
+  'global.reorder': () => features().reorder && reorder(),
+  'global.theme': () => $('#btn-theme').click(),
+  'global.shortcuts': () => openShortcuts(),
+  'level.save': () => save(),
+  'level.edit': () => (state.editing ? stopEdit() : startEdit()),
+  'level.play': () => features().webgame && showInGame('play'),
+  'level.share': () => features().share && share(),
+  'level.prev': () => stepLevel(-1),
+  'level.next': () => stepLevel(1),
+  'level.tabOverview': () => setTab('overview'),
+  'level.tabJson': () => setTab('json'),
+  'level.tabHistory': () => setTab('history'),
+};
+for (const a of game.shortcuts || []) ACTIONS_RUN[a.id] ||= () => game.onShortcut?.(a.id, { state });
+
 function onEvent(type, d) {
   if (type === 'connection') {
     $('#conn').classList.toggle('on', d.online);
@@ -922,6 +1013,11 @@ function onEvent(type, d) {
   }
   if (type === 'game.build') {
     if (features().webgame) onBuildEvent(d, d.author === state.me.email);
+    return;
+  }
+  if (type === 'settings.updated') {
+    showNotice(d.notice);
+    api.me().then(me => { state.me = me; }).catch(() => {});
     return;
   }
   if (type.startsWith('pack.') && type !== 'pack.imported') {
@@ -965,6 +1061,31 @@ function wire() {
   $('#btn-validate').addEventListener('click', () => validatePack().catch(e => toast(e.message, 'err')));
   $('#btn-levelhub').addEventListener('click', () => levelHub().catch(e => toast(e.message, 'err')));
   $('#btn-audit').addEventListener('click', () => showAudit().catch(e => toast(e.message, 'err')));
+  $('#btn-overview').addEventListener('click', () => overview().catch(e => toast(e.message, 'err')));
+  $('#btn-reorder').addEventListener('click', () => reorder().catch(e => toast(e.message, 'err')));
+  $('#btn-trash').addEventListener('click', () => openTrash({ canArchive: can('archive'), onChanged: () => loadPacks(state.pack) }).catch(e => toast(e.message, 'err')));
+  $('#btn-admin').addEventListener('click', () => openAdmin().catch(e => toast(e.message, 'err')));
+  $('#btn-keys').addEventListener('click', () => openShortcuts());
+  $('#btn-share').addEventListener('click', () => Promise.resolve(share()).catch(e => toast(e.message, 'err')));
+  $('#btn-grid').addEventListener('click', () => {
+    gridMode = !gridMode;
+    try { localStorage.setItem(GRID_KEY, gridMode ? '1' : '0'); } catch { /* bỏ qua */ }
+    renderList();
+  });
+  $('#btn-capture').addEventListener('click', async () => {
+    const b = $('#btn-capture');
+    b.disabled = true;
+    try {
+      await captureMissing(state.pack, state.levels, (i, n) => { b.textContent = `📷 ${i}/${n}`; });
+      invalidateThumbs();
+      renderList();
+    } catch (e) {
+      toast(e.message, 'err');
+    } finally {
+      b.disabled = false;
+      b.textContent = '📷 Chụp ảnh còn thiếu';
+    }
+  });
   $('#btn-theme').addEventListener('click', () => {
     const cur = document.documentElement.dataset.theme;
     const dark = cur ? cur === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1012,15 +1133,12 @@ function wire() {
   for (const b of $$('.tabs button')) b.addEventListener('click', () => setTab(b.dataset.tab));
 
   document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-      e.preventDefault();
-      save();
-    }
-    if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && state.sel) {
-      e.preventDefault();
-      const i = state.levels.findIndex(l => l.name === state.sel) + (e.key === 'ArrowRight' ? 1 : -1);
-      if (state.levels[i]) openLevel(state.levels[i].name);
-    }
+    if ($('.dialog-backdrop')) return;
+    const id = actionFor(e);
+    const run = ACTIONS_RUN[id];
+    if (!run || (id.startsWith('level.') && !state.sel)) return;
+    e.preventDefault();
+    Promise.resolve(run()).catch(err => toast(err.message, 'err'));
   });
   addEventListener('beforeunload', e => { if (state.dirty) e.preventDefault(); });
   addEventListener('resize', () => { if (state.draft && state.tab === 'overview') drawPreview(); });

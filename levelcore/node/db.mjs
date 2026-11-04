@@ -33,7 +33,27 @@ CREATE INDEX IF NOT EXISTS audit_user ON audit(user, ts);
 CREATE TABLE IF NOT EXISTS ci_levels(
   digest TEXT PRIMARY KEY, by TEXT NOT NULL, received_at REAL NOT NULL, status TEXT NOT NULL,
   build TEXT, pack TEXT, detail TEXT, updated_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS settings(
+  key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS plays(
+  id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE, pack TEXT, level TEXT, rev INTEGER, sha TEXT, source TEXT NOT NULL,
+  user TEXT NOT NULL, link TEXT, player TEXT, build TEXT, client TEXT, started_at REAL NOT NULL, ended_at REAL,
+  result TEXT, duration_ms INTEGER, cheat INTEGER NOT NULL DEFAULT 0, events INTEGER NOT NULL DEFAULT 0, summary TEXT);
+CREATE INDEX IF NOT EXISTS plays_level ON plays(pack, level, started_at);
+CREATE INDEX IF NOT EXISTS plays_sha ON plays(sha);
+CREATE TABLE IF NOT EXISTS play_events(
+  play_id INTEGER NOT NULL REFERENCES plays(id), seq INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(play_id, seq));
+CREATE TABLE IF NOT EXISTS share_links(
+  token TEXT PRIMARY KEY, pack TEXT NOT NULL, level TEXT NOT NULL, rev INTEGER, sha TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at REAL NOT NULL, expires_at REAL NOT NULL,
+  revoked_at REAL, opens INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS thumbs(
+  sha TEXT PRIMARY KEY, type TEXT NOT NULL, data BLOB NOT NULL, source TEXT NOT NULL,
+  created_by TEXT NOT NULL, created_at REAL NOT NULL);
 `;
+
+// Cột thêm sau khi DB đã chạy (DB do bản trước hoặc server Python tạo vẫn mở được): ALTER TABLE ADD COLUMN khi thiếu.
+const COLUMNS = [['packs', 'archived_at', 'REAL'], ['packs', 'archive_reason', 'TEXT']];
 
 export class DB {
   constructor(file) {
@@ -44,6 +64,11 @@ export class DB {
     this.db.exec('PRAGMA synchronous=NORMAL');
     this.db.exec('PRAGMA foreign_keys=ON');
     this.db.exec(SCHEMA);
+    for (const [table, col, decl] of COLUMNS) {
+      const have = this.db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
+      if (!have) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+    }
+    this.file = path.resolve(file);
     this.statements = new Map();
   }
 

@@ -117,6 +117,23 @@ export const api = {
   gameBuilds: () => request('GET', '/api/game/builds'),
   activateBuild: id => request('POST', `/api/game/builds/${enc(id)}/activate`),
   removeBuild: id => request('DELETE', `/api/game/builds/${enc(id)}`),
+  reorder: (pack, order, base, dryRun = false) => request('POST', `/api/packs/${enc(pack)}/reorder`, { json: { order, base, dry_run: dryRun } }),
+  plays: (params = {}) => request('GET', `/api/plays?${new URLSearchParams(params)}`),
+  play: id => request('GET', `/api/plays/${enc(id)}`),
+  playStats: pack => request('GET', `/api/packs/${enc(pack)}/playstats`),
+  exportPlays: (params = {}) => request('GET', `/api/plays/export?${new URLSearchParams(params)}`, { raw: true }),
+  createLink: body => request('POST', '/api/links', { json: body }),
+  links: (params = {}) => request('GET', `/api/links?${new URLSearchParams(params)}`),
+  revokeLink: token => request('DELETE', `/api/links/${enc(token)}`),
+  thumbsHave: pack => request('GET', `/api/packs/${enc(pack)}/thumbs`),
+  putThumb: (sha, blob, source = 'capture') =>
+    request('PUT', `/api/thumbs/${enc(sha)}?source=${enc(source)}`, { body: blob, headers: { 'Content-Type': blob.type } }),
+  trash: () => request('GET', '/api/trash'),
+  adminSettings: () => request('GET', '/api/admin/settings'),
+  saveAdminSettings: body => request('PUT', '/api/admin/settings', { json: body }),
+  adminStorage: () => request('GET', '/api/admin/storage'),
+  adminBackup: () => request('POST', '/api/admin/backup'),
+  adminHousekeeping: () => request('POST', '/api/admin/housekeeping'),
   /** Tải zip bản game theo từng phần (proxy của link công ty giới hạn cỡ mỗi request); onProgress(phần xong, tổng phần). */
   gameUpload: async (file, onProgress = () => {}) => {
     const up = await request('POST', '/api/game/uploads', { json: { size: file.size, name: file.name || '' } });
