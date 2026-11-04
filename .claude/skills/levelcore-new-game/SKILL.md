@@ -5,7 +5,8 @@ description: Đưa một game mới vào tool level dựng trên level-tool-core
 
 # Đưa game mới vào level-tool-core
 
-Đọc `levelcore/AGENTS.md` trước (chỗ được sửa, giao diện, changelog). Không sửa gì trong `levelcore/`; thiếu gì ở core
+Đọc `levelcore/AGENTS.md` trước (chỗ được sửa, giao diện, changelog). Các bước ngoài repo tool (bridge của bản Unity,
+Jenkins, đăng ký BI, Level Hub) và bảng tham chiếu: `levelcore/docs/TICH-HOP-GAME.md`. Không sửa gì trong `levelcore/`; thiếu gì ở core
 thì ghi lại để đề xuất cho repo core.
 
 ## 1. Kiểm repo

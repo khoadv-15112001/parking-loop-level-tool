@@ -9,7 +9,7 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Nhập level: không ghi đè level đã sửa trong tool (bật "Ghi đè" nếu cần); file lỗi, level đang khoá báo riêng.
 - Game khai bằng manifest: `<PREFIX>_ADMINS` rỗng là không ai làm admin, trừ máy DEV. Plugin Python cũ giữ luật cũ.
 - Xuất Level Hub: Xuất và Đẩy lên BI dùng đúng bản lúc bấm Kiểm tra; đổi tham số thì phải Kiểm tra lại.
-- Nhận bản game và level từ Jenkins: thêm `<PREFIX>_CI_TOKEN` trên BI, cùng giá trị secret `LEVEL_TOOL_TOKEN` của Jenkins.
+- Nhận bản game và level từ Jenkins: `<PREFIX>_CI_TOKEN` trên BI cùng giá trị Jenkins secret `<slug>-level-tool-token`.
 - Server Node: level đã xoá và bộ lưu trữ bị xoá hẳn sau 30 ngày (đổi ở Quản trị); lưu trữ bộ phải ghi lý do.
 
 ### Mới

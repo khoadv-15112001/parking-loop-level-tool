@@ -64,7 +64,7 @@ Game cần core làm thêm việc gì thì thêm điểm mở rộng ở repo co
 
 - Deploy lên BI Center bằng `bi.yaml`; dùng các skill BI chính thức: `bi-new`, `bi-onboard`, `bi-yaml`, `bi-release`.
 - Trên BI bắt buộc có `<PREFIX>_SESSION_SECRET`, `<PREFIX>_ADMINS`, các biến `<PREFIX>_BI_*`. Nhận bản game và level từ
-  Jenkins: `<PREFIX>_CI_TOKEN` (cùng giá trị secret `LEVEL_TOOL_TOKEN` của Jenkins), `<PREFIX>_CI_BRANCH`.
+  Jenkins: `<PREFIX>_CI_TOKEN` (cùng giá trị Jenkins secret text `<slug>-level-tool-token`), `<PREFIX>_CI_BRANCH`.
 - Tag phát hành `<slug>-vX.Y.Z`. Không push, tag hay mở PR khi chưa hỏi người dùng.
 
 ## Changelog

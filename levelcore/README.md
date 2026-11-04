@@ -13,7 +13,7 @@ Phần chung của mọi tool level (HoleLevel, FishLevel, AntLevel…). Mỗi t
 
 Quy tắc cho người và agent làm tool (chỗ được sửa, viết phần game, giao diện, changelog): [AGENTS.md](AGENTS.md).
 Fork / đóng góp ngược về core: [FORK.md](FORK.md). Game mới: `node levelcore/tools/new_game.mjs …` hoặc skill
-`levelcore-new-game`.
+`levelcore-new-game`; hướng dẫn đủ các bước (repo tool, Unity, Jenkins, BI, Level Hub): [docs/TICH-HOP-GAME.md](docs/TICH-HOP-GAME.md).
 
 ## Nâng core
 

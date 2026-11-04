@@ -30,7 +30,7 @@ node levelcore/contracts/fake_player.mjs data/fake-player.zip
 ## B. Thật (ghi rõ phần nào chưa chạy được và vì sao)
 
 Cần: tool trên bi-dev có Dev Game, quyền app + Level Hub trên app thử, biến `<PREFIX>_BI_*` và `<PREFIX>_CI_TOKEN`; Jenkins
-có secret `LEVEL_TOOL_TOKEN` cùng giá trị; project Unity có bridge và dòng `levelToolUrl` trong Jenkinsfile.
+có secret text `<slug>-level-tool-token` cùng giá trị; project Unity có bridge và dòng `levelToolUrl` trong Jenkinsfile.
 
 1. Đăng nhập bằng Google trên bi-dev. Tài khoản có quyền tool nhưng chưa có quyền Level Hub: Đẩy lên BI báo lỗi 403 của BI
    (kèm gợi ý xin quyền), không bị đăng xuất khỏi tool.
