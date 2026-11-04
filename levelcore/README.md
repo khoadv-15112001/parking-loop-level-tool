@@ -51,7 +51,8 @@ Fork / đóng góp ngược về core: [FORK.md](FORK.md). Game mới: `node lev
 
 Hợp đồng chung của hai server, cách chạy test hợp đồng, bảng route, định dạng manifest, snapshot Level Hub và CI:
 [`contracts/README.md`](contracts/README.md). Kế hoạch đang làm: [`docs/KE-HOACH-CORE.md`](docs/KE-HOACH-CORE.md); chạy game
-mẫu trên từng server và kịch bản kiểm tay: [`docs/SMOKE-DOT1.md`](docs/SMOKE-DOT1.md), [`docs/SMOKE-DOT2.md`](docs/SMOKE-DOT2.md).
+mẫu trên từng server và kịch bản kiểm tay: [`docs/SMOKE-DOT1.md`](docs/SMOKE-DOT1.md), [`docs/SMOKE-DOT2.md`](docs/SMOKE-DOT2.md);
+kết quả thử game thứ hai và nâng core bằng merge: [`docs/DOT3-KET-QUA.md`](docs/DOT3-KET-QUA.md).
 
 Server Node: `node levelcore/node/server.mjs` (game ở `game/manifest.json` hoặc `LEVELCORE_GAME_MANIFEST`; cổng
 `<PREFIX>_PORT`, mặc định 8880; cùng biến môi trường `<PREFIX>_*` như bảng dưới). Server Python tự nạp `game/manifest.json`
