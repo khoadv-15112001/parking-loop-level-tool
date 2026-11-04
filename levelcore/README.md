@@ -1,5 +1,20 @@
 # level-tool-core
 
+## Dung lượng dữ liệu
+
+Mục tiêu dưới 1,5 GB trên ổ đĩa cho mỗi tool, cảnh báo từ 1,2 GB; chừa 100 MB khi nhận dữ liệu và tạo sao lưu.
+Server Node đo toàn bộ thư mục chứa DB và các thư mục game, kể cả file rời, bản chờ, ZIP đang tải và dữ liệu đã xoá.
+Đây là ngưỡng kiểm tra khi nhận dữ liệu, không tự xoá level hay lượt chơi để ép xuống; dữ liệu cần giữ lâu nên chuyển
+ra nơi lưu riêng khi gần đầy. Cấu hình DB và game phải nằm trong thư mục dữ liệu riêng của tool.
+
+Sao lưu Node: nén `.db.gz`, giữ tối đa 7 bản trong 200 MB, luôn giữ bản mới nhất kể cả khi vượt ngân sách. Bản `.db`
+cũ tự được nén lúc dọn định kỳ hoặc sao lưu; ngày gốc được giữ, chỉ xoá file gốc khi giải nén kiểm tra khớp SHA-256.
+Khôi phục: giải nén, dừng tool và thay DB theo quy trình SQLite, bỏ WAL/SHM của DB cũ. Python tiếp tục dùng sao lưu BI.
+
+Cả Node và Python giữ 1 bản WebGL quay lại và 1 bản chờ, tổng ngân sách 800 MB tính cả bản đang dùng (luôn được giữ).
+Nhận ZIP và giải nén kiểm tra cả dữ liệu tạm trong mốc 1,5 GB; thiếu chỗ báo 507, không đổi bản đang dùng.
+Một build vượt 800 MB bị từ chối. Nên bật Brotli/gzip của Unity. Ngưỡng tính theo byte thập phân, không phải GiB.
+
 Phần chung của mọi tool level (HoleLevel, FishLevel, AntLevel…). Mỗi tool của một game là **fork** của repo
 `level-tool-core`, gồm hai phần:
 

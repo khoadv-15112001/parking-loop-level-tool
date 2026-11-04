@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ApiError } from './http.mjs';
 import { iso, now } from './store.mjs';
+import { storageRoots, storageUsage, requireStorage, maintainBackups, compressBackup, diskBytes } from './storage.mjs';
 
 export const ACTIONS = {
   production: 'Bật / tắt bộ production',
@@ -25,6 +26,7 @@ const DEFAULT_PERMISSIONS = {
 const DEFAULTS = { admins: [], permissions: DEFAULT_PERMISSIONS, notice: { text: '', level: 'info' }, trashDays: 30, linkDays: 14 };
 const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const KEEP_BACKUPS = 7;
+const BACKUP_NAME = /^[\w.-]+-\d{8}-\d{6}\.db(?:\.gz)?$/;
 
 function dirSize(p) {
   try {
@@ -129,7 +131,9 @@ export class Admin {
   storage(builds) {
     const db = ['', '-wal', '-shm'].reduce((n, x) => n + dirSize(this.db.file + x), 0);
     const count = sql => this.db.get(sql).n;
+    const { bytes: totalBytes, ...policy } = storageUsage(storageRoots(this.s));
     return {
+      totalBytes, ...policy,
       database: db, game: dirSize(builds.dir) + dirSize(builds.buildsDir), uploads: dirSize(builds.uploadsDir),
       backups: dirSize(path.join(this.dataDir, 'backups')), purged: dirSize(path.join(this.dataDir, 'purged')),
       counts: {
@@ -140,17 +144,40 @@ export class Admin {
     };
   }
 
-  /** Bản sao DB nhất quán (VACUUM INTO) ở <data>/backups/, giữ KEEP_BACKUPS bản mới nhất. */
   backup(user) {
+    if (this.backupPending) return this.backupPending;
+    this.backupPending = this.createBackup(user).finally(() => { this.backupPending = null; });
+    return this.backupPending;
+  }
+
+  maintainBackups() {
+    if (this.backupWriting) return Promise.resolve([]);
+    if (this.maintenancePending) return this.maintenancePending;
+    this.maintenancePending = maintainBackups(path.join(this.dataDir, 'backups'), BACKUP_NAME, KEEP_BACKUPS)
+      .finally(() => { this.maintenancePending = null; });
+    return this.maintenancePending;
+  }
+
+  async createBackup(user) {
+    await this.maintainBackups();
     const dir = path.join(this.dataDir, 'backups');
     fs.mkdirSync(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
     const file = path.join(dir, `${path.basename(this.db.file, '.db')}-${stamp}.db`);
-    if (fs.existsSync(file)) throw new ApiError(409, 'Vừa sao lưu xong, đợi một giây rồi thử lại');
-    this.db.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
-    const old = fs.readdirSync(dir).filter(n => n.endsWith('.db')).sort().reverse().slice(KEEP_BACKUPS);
-    for (const n of old) fs.rmSync(path.join(dir, n), { force: true });
-    this.db.write(() => this.store.audit(user, 'admin.backup', null, null, null, { file: path.basename(file) }));
-    return { file: path.basename(file), size: fs.statSync(file).size, kept: KEEP_BACKUPS };
+    if (fs.existsSync(file) || fs.existsSync(`${file}.gz`)) throw new ApiError(409, 'Vừa sao lưu xong, đợi một giây rồi thử lại');
+    requireStorage(storageRoots(this.s), diskBytes(this.db.file) * 2, ApiError);
+    this.backupWriting = true;
+    try {
+      this.db.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+      await compressBackup(file);
+      await maintainBackups(dir, BACKUP_NAME, KEEP_BACKUPS);
+    } catch (error) {
+      fs.rmSync(file, { force: true });
+      throw error;
+    } finally {
+      this.backupWriting = false;
+    }
+    this.db.write(() => this.store.audit(user, 'admin.backup', null, null, null, { file: path.basename(`${file}.gz`) }));
+    return { file: path.basename(`${file}.gz`), size: fs.statSync(`${file}.gz`).size, kept: KEEP_BACKUPS };
   }
 }

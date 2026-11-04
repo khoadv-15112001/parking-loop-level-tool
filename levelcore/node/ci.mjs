@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ApiError } from './http.mjs';
 import { iso, now, Store } from './store.mjs';
+import { requireStorage, diskBytes } from './storage.mjs';
 
 const LEVELS_WAIT = 2 * 3600;
 export const MAX_LEVELS_ZIP = 400 * 1024 * 1024;
@@ -88,6 +89,7 @@ export class Ci {
       if (r && r.status === 'imported') return { status: 'duplicate', levels: Ci.row(r) };
       if (r && r.status === 'waiting' && r.by === who) return { status: 'waiting', levels: Ci.row(r) };
       fs.mkdirSync(this.levelsDir, { recursive: true });
+      requireStorage(this.builds.storageRoots, Math.max(0, body.length - diskBytes(path.join(this.levelsDir, `${digest}.zip`))), ApiError);
       fs.writeFileSync(path.join(this.levelsDir, `${digest}.zip`), body);
       const t = now();
       this.db.write(() => {

@@ -10,14 +10,15 @@ const EVERY_MS = 6 * 3600 * 1000;
 const LINK_GRACE = 30 * 86400;
 
 export class Housekeeping {
-  constructor(db, store, admin) {
-    Object.assign(this, { db, store, admin });
+  constructor(db, store, admin, pruneBuilds = () => []) {
+    Object.assign(this, { db, store, admin, pruneBuilds });
     this.purgedDir = path.join(path.dirname(db.file), 'purged');
   }
 
   start() {
-    const tick = () => {
+    const tick = async () => {
       try {
+        await this.admin.maintainBackups();
         this.run('system');
       } catch (e) {
         console.error(`[housekeeping] ${e.message}`);
@@ -61,7 +62,7 @@ export class Housekeeping {
   /** Xoá hẳn những gì quá hạn trong thùng rác. Trả số đã dọn. */
   run(user = 'system') {
     const cutoff = now() - this.admin.settings().trashDays * 86400;
-    const out = { levels: 0, packs: 0, blobs: 0, thumbs: 0, links: 0 };
+    const out = { levels: 0, packs: 0, blobs: 0, thumbs: 0, links: 0, builds: this.pruneBuilds() };
     this.db.write(() => this.db.run('UPDATE packs SET archived_at=? WHERE archived=1 AND archived_at IS NULL', now()));
     for (const lv of this.db.all('SELECT l.* FROM levels l JOIN packs p ON p.name=l.pack WHERE l.deleted=1 AND p.archived=0 AND l.updated_at<?', cutoff)) {
       const last = this.db.get('SELECT blob_sha FROM revisions WHERE level_id=? AND blob_sha IS NOT NULL ORDER BY rev DESC LIMIT 1', lv.id);

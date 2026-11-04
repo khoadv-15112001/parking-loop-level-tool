@@ -24,7 +24,9 @@ function form(s) {
 
 async function showStorage(dlg) {
   const st = await api.adminStorage();
-  $('#ad-storage', dlg).innerHTML = `Database ${mb(st.database)} · bản game ${mb(st.game)} · sao lưu ${mb(st.backups)} · đã xoá hẳn ${mb(st.purged)}<br>
+  $('#ad-storage', dlg).innerHTML = `<span class="${st.status === 'ok' ? '' : 'warn'}">Tổng ${mb(st.totalBytes)} / 1,5 GB</span><br>
+    Database ${mb(st.database)} · bản game ${mb(st.game)} · đang tải ${mb(st.uploads)} · sao lưu ${mb(st.backups)} · đã xoá hẳn ${mb(st.purged)}<br>
+    Cảnh báo từ 1,2 GB; chừa 100 MB khi nhận bản game. Sao lưu nén: tối đa 7 bản / 200 MB, luôn giữ bản mới nhất.<br>
     ${st.counts.levels} level · ${st.counts.revisions} revision · ${st.counts.plays} lượt chơi · ${st.counts.thumbs} ảnh · ${st.counts.links} link còn hạn`;
 }
 

@@ -111,6 +111,7 @@ class Ci:
             if r is not None and r["status"] == "waiting" and r["by"] == who:
                 return {"status": "waiting", "levels": self._row(r)}
             self.levels_dir().mkdir(parents=True, exist_ok=True)
+            webgame.require_storage(self.s, max(0, len(body) - webgame.disk_bytes(self.levels_dir() / f"{digest}.zip")))
             (self.levels_dir() / f"{digest}.zip").write_bytes(body)
             now = clock.now()
             with self.db.write() as c:
@@ -206,7 +207,7 @@ async def _read_limited(request: Request, limit: int) -> bytes:
     return b"".join(chunks)
 
 
-async def _stream_to_file(request: Request, path: Path, limit: int) -> str:
+async def _stream_to_file(request: Request, path: Path, limit: int, settings=None) -> str:
     h, size = hashlib.sha256(), 0
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "wb") as out:
@@ -214,6 +215,8 @@ async def _stream_to_file(request: Request, path: Path, limit: int) -> str:
             size += len(chunk)
             if size > limit:
                 raise ApiError(413, f"Zip quá {limit >> 20} MB")
+            if settings is not None:
+                webgame.require_storage(settings, len(chunk))
             h.update(chunk)
             out.write(chunk)
     return h.hexdigest()
@@ -240,7 +243,7 @@ def create_router(s, ci: Ci, current_user, require_admin) -> APIRouter:
         d = webgame.game_dir(s)
         tmp = d.with_name(d.name + ".uploads") / f"ci-{secrets.token_hex(8)}.zip"
         try:
-            digest = await _stream_to_file(request, tmp, webgame.MAX_ZIP_BYTES)
+            digest = await _stream_to_file(request, tmp, webgame.MAX_ZIP_BYTES, s)
             return await run_in_threadpool(ci.receive_player, by, tmp, meta, digest)
         finally:
             tmp.unlink(missing_ok=True)

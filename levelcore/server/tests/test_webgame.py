@@ -49,6 +49,29 @@ def test_reject_bad_zips(A):
     assert A.get("/api/game").json() == {"available": False}
 
 
+def test_full_storage_rejects_build_and_preserves_current(A, settings, monkeypatch):
+    from levelcore import storage
+    assert A.post("/api/game/upload", content=_zip(BUILD)).status_code == 200
+    current = A.get("/api/game").json()["id"]
+    monkeypatch.setattr(storage, "STORAGE_LIMIT", storage.storage_usage(settings) + storage.STORAGE_RESERVE + 1)
+    response = A.post("/api/game/upload", content=_zip({"index.html": "next", "Build/n.loader.js": "loader"}))
+    assert response.status_code == 507
+    assert A.get("/api/game").json()["id"] == current
+    assert A.get("/game/index.html").text == "<html>game</html>"
+
+
+def test_prune_builds_counts_bytes_and_always_keeps_current(settings, monkeypatch):
+    from levelcore import webgame
+    first = webgame.install_build(settings, _zip(BUILD), "admin")["build"]["id"]
+    second = webgame.install_build(settings, _zip({"index.html": "next", "Build/n.loader.js": "l"}), "admin")["build"]["id"]
+    measure = webgame.disk_bytes
+    monkeypatch.setattr(webgame, "disk_bytes", lambda path: 500_000_000 if path.name == first else measure(path))
+    monkeypatch.setattr(webgame, "BUILD_BUDGET", 100_000_000)
+    assert webgame.prune(settings) == [first]
+    assert webgame.find_build(settings, second) == "current"
+    assert webgame.find_build(settings, first) is None
+
+
 def test_bi_center_env_defaults(monkeypatch, tmp_path):
     from levelcore.config import Settings
     for k in ("SAMPLELEVEL_DB", "SAMPLELEVEL_PUBLIC_BASE", "SAMPLELEVEL_GAME_DIR"):

@@ -57,7 +57,11 @@ export function createApp(game, s) {
   const plays = new Plays(db, store);
   const links = new Links(db, store, admin);
   const thumbs = new Thumbs(db, store);
-  const housekeeping = new Housekeeping(db, store, admin);
+  const housekeeping = new Housekeeping(db, store, admin, () => {
+    const removed = builds.prune();
+    ci.afterPrune(removed);
+    return removed;
+  });
   store.ensureDefaultPacks();
 
   const pub = new URL(s.publicBase);
@@ -294,7 +298,7 @@ export function createApp(game, s) {
     admin.require(user, 'gameBuilds');
     const tmp = tempZip('single');
     try {
-      await streamToFile(req, tmp, MAX_ZIP_BYTES);
+      await streamToFile(req, tmp, MAX_ZIP_BYTES, builds.storageRoots);
       return await builds.installUpload(tmp, user, url.searchParams.get('name') || '');
     } finally {
       fs.rmSync(tmp, { force: true });
@@ -332,8 +336,9 @@ export function createApp(game, s) {
     requireAdmin(user, 'sao lưu database');
     return admin.backup(user);
   });
-  api.add('POST', '/api/admin/housekeeping', ({ user }) => {
+  api.add('POST', '/api/admin/housekeeping', async ({ user }) => {
     requireAdmin(user, 'dọn thùng rác');
+    await admin.maintainBackups();
     return housekeeping.run(user);
   });
   api.add('GET', '/api/trash', () => housekeeping.trash());
@@ -385,7 +390,7 @@ export function createApp(game, s) {
   ciApi.add('POST', '/api/ci/webgl', async ({ req, url }) => {
     const tmp = tempZip('ci');
     try {
-      const digest = await streamToFile(req, tmp, MAX_ZIP_BYTES);
+      const digest = await streamToFile(req, tmp, MAX_ZIP_BYTES, builds.storageRoots);
       return await ci.receivePlayer(url.searchParams.get('by'), tmp, cleanMeta(url), digest);
     } finally {
       fs.rmSync(tmp, { force: true });

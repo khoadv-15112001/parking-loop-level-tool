@@ -17,14 +17,14 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Server Node đủ route như server Python; bản game từ Jenkins: nhánh theo dõi lên ngay, nhánh khác chờ admin chọn.
 - Chơi thử: link + QR cho điện thoại, ▶ Chơi rN trong Lịch sử, mọi lượt chơi được lưu (xuất JSONL cho phân tích, AI).
 - Màn Thư viện (lưới ảnh, lọc, chọn nhiều), Thứ tự (kéo thả, ghim, hoàn tác), Tổng quan bộ, Hoạt động; tìm nhanh Ctrl+K.
-- Thùng rác, Quản trị (quyền, thông báo, sao lưu), phím tắt đổi được; mỗi người tự chỉnh bố cục (cột, khung game).
+- Quản trị Node: sao lưu nén, tối đa 7 bản / 200 MB; thùng rác, quyền, phím tắt và bố cục tự chỉnh.
 
 ### Thay đổi
 - Tìm level theo số, dải `10-20`, danh sách `2,5,9` và chữ không dấu; form thuộc tính từ `fields` của game.
 - Lưu và nhập: xung đột có so sánh và "Lưu thành bản sao"; Nhập xem trước từng level trước khi ghi.
 - Giao diện mặc định như Sand Jam / AntLevel: thanh màn, hàng của bộ, thanh trạng thái, gợi ý phím; Lưu chỉ hiện khi sửa.
 - Đẩy lên BI: lỗi 409 và 413 có gợi ý; BI không trả lời sau khi tạo bộ thì tool tự tìm lại bộ vừa tạo.
-- Bản game: giữ một bản trước để quay lại; gửi lại cùng bản build không cài lần hai.
+- Bản game: giữ 1 bản quay lại và 1 bản chờ trong 800 MB; kiểm tra chỗ trống dưới mốc 1,5 GB trước khi nhận.
 
 ### Cho Dev
 - Route mới (chỉ server Node): `/api/plays*`, `/api/links*`, `/p/<token>*`, `/api/thumbs/*`, `/reorder`, `/api/admin/*`.

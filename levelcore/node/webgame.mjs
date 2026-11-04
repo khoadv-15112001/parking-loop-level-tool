@@ -10,6 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { ApiError } from './http.mjs';
 import { iso, now } from './store.mjs';
 import { extractZipEntry, listZipFile } from './zip.mjs';
+import { BUILD_BUDGET, diskBytes, storageRoots, requireStorage } from './storage.mjs';
 
 export const MAX_ZIP_BYTES = 1024 * 1024 * 1024;
 const MAX_UNZIPPED_BYTES = 2 * 1024 * 1024 * 1024;
@@ -17,7 +18,7 @@ const INFO_FILE = 'levelcore_game.json';
 export const CHUNK_BYTES = 50 * 1024 * 1024;
 const UPLOAD_TTL = 24 * 3600;
 const KEEP_ROLLBACK = 1;
-const KEEP_WAITING = 3;
+const KEEP_WAITING = 1;
 const BUILD_ID = /^(b[0-9a-f]{12}|legacy-\d+)$/;
 const BUILD_FIELDS = ['id', 'version', 'commit', 'branch', 'buildNumber', 'buildUrl', 'environment', 'digest', 'source',
   'uploaded_by', 'uploaded_at', 'activated_at', 'file', 'size'];
@@ -97,6 +98,7 @@ function checkZip(entries) {
 
 export class Builds {
   constructor(s) {
+    this.storageRoots = storageRoots(s);
     this.dir = path.resolve(s.gameDir);
     this.buildsDir = `${this.dir}.builds`;
     this.uploadsDir = `${this.dir}.uploads`;
@@ -206,10 +208,15 @@ export class Builds {
       return { status: 'unchanged', build: publicBuild(readInfo(where === 'current' ? this.dir : path.join(this.buildsDir, id)), where === 'current'), pruned: [] };
     }
     if (where === 'stored') return { status: 'current', ...(await this.activateNow(id)) };
+    const unpacked = entries.reduce((bytes, entry) => bytes + entry.size, 0);
+    if (unpacked > BUILD_BUDGET) throw new ApiError(413, 'Bản WebGL vượt ngân sách 800 MB; nén bản game trước khi tải lên.');
+    if (!activate && diskBytes(this.dir) + unpacked > BUILD_BUDGET) throw new ApiError(507, 'Không đủ chỗ giữ bản game chờ trong ngân sách 800 MB.');
+    requireStorage(this.storageRoots, unpacked + 64 * 1024, ApiError);
     const t = now();
     Object.assign(m, { id, key, uploaded_by: user, uploaded_at: iso(t), uploaded_ts: t, file: name || m.file || '', size });
     const tmp = await this.extract(file, entries, root, m);
     try {
+      if (diskBytes(tmp) + (activate ? 0 : diskBytes(this.dir)) > BUILD_BUDGET) throw new ApiError(507, 'Không đủ chỗ giữ bản game mới trong ngân sách 800 MB.');
       if (activate) {
         await this.swapIn(tmp);
       } else {
@@ -246,12 +253,19 @@ export class Builds {
     return out;
   }
 
-  /** Giữ KEEP_ROLLBACK bản đã dùng gần nhất và KEEP_WAITING bản chờ mới nhất; trả id đã xoá. */
   prune() {
     const stored = this.list().filter(b => !b.current);
     const old = stored.filter(b => b.status === 'rollback').sort((a, b) => String(b.activated_at || '').localeCompare(String(a.activated_at || '')));
     const waiting = stored.filter(b => b.status === 'waiting');
-    const removed = [...old.slice(KEEP_ROLLBACK), ...waiting.slice(KEEP_WAITING)];
+    let bytes = diskBytes(this.dir);
+    const removed = [];
+    for (const [group, keep] of [[waiting, KEEP_WAITING], [old, KEEP_ROLLBACK]]) {
+      for (const [index, build] of group.entries()) {
+        const size = diskBytes(path.join(this.buildsDir, build.id));
+        if (index >= keep || bytes + size > BUILD_BUDGET) removed.push(build);
+        else bytes += size;
+      }
+    }
     for (const b of removed) fs.rmSync(path.join(this.buildsDir, b.id), { recursive: true, force: true });
     return removed.map(b => b.id);
   }
@@ -292,7 +306,8 @@ export class Builds {
 }
 
 /** Ghi body request ra file (không nạp vào RAM), giới hạn cỡ; trả sha256. */
-export function streamToFile(req, file, limit) {
+export function streamToFile(req, file, limit, roots = [path.dirname(file)]) {
+  requireStorage(roots, Number(req.headers['content-length'] || 0), ApiError);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   return new Promise((resolve, reject) => {
     if (Number(req.headers['content-length'] || 0) > limit) {
@@ -302,7 +317,7 @@ export function streamToFile(req, file, limit) {
     }
     const h = crypto.createHash('sha256');
     const out = fs.createWriteStream(file);
-    let size = 0, failed = false;
+    let size = 0, failed = false, checkedBytes = 0;
     const fail = e => {
       if (failed) return;
       failed = true;
@@ -313,6 +328,12 @@ export function streamToFile(req, file, limit) {
     req.on('data', chunk => {
       size += chunk.length;
       if (size > limit) return fail(new ApiError(413, `Zip quá ${limit >> 20} MB`));
+      if (size > checkedBytes) {
+        try {
+          requireStorage(roots, Math.max(chunk.length, 8 * 1024 * 1024), ApiError);
+          checkedBytes = size + 8 * 1024 * 1024;
+        } catch (error) { return fail(error); }
+      }
       h.update(chunk);
       if (!out.write(chunk)) {
         req.pause();
@@ -356,6 +377,7 @@ export class ChunkUploads {
         if (Date.now() / 1000 - fs.statSync(p).mtimeMs / 1000 > UPLOAD_TTL) fs.rmSync(p, { recursive: true, force: true });
       }
     } catch {}
+    requireStorage(this.builds.storageRoots, size, ApiError);
     const id = crypto.randomBytes(8).toString('hex');
     fs.mkdirSync(path.join(this.dir, id), { recursive: true });
     fs.writeFileSync(path.join(this.dir, id, 'meta.json'), JSON.stringify({ size, name, user }));
@@ -369,6 +391,7 @@ export class ChunkUploads {
     if (!/^\d+$/.test(String(i)) || Number(i) >= parts) throw new ApiError(400, `Phần ${i} ngoài khoảng 0..${parts - 1}`);
     const want = Math.min(CHUNK_BYTES, meta.size - Number(i) * CHUNK_BYTES);
     if (data.length !== want) throw new ApiError(400, `Phần ${i} dài ${data.length} byte, cần ${want}`);
+    requireStorage(this.builds.storageRoots, Math.max(0, data.length - diskBytes(path.join(dir, `${String(i).padStart(5, '0')}.part`))), ApiError);
     fs.writeFileSync(path.join(dir, `${String(i).padStart(5, '0')}.part`), data);
     return { ok: true, part: Number(i) };
   }

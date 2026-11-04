@@ -24,6 +24,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 
 from .errors import ApiError
+from .storage import BUILD_BUDGET, disk_bytes, require_storage
 
 MAX_ZIP_BYTES = 1024 * 1024 * 1024          # 1 GB nén
 MAX_UNZIPPED_BYTES = 2 * 1024 * 1024 * 1024
@@ -39,7 +40,7 @@ TYPES = {".js": "application/javascript", ".wasm": "application/wasm", ".data": 
 ENCODINGS = {".br": "br", ".gz": "gzip"}
 HASHED = re.compile(r"[0-9a-f]{32}")      # Unity: Build/<md5>.*, Addressables: <tên>_<md5>.bundle
 KEEP_ROLLBACK = 1                           # bản đã dùng trước đây giữ lại để quay lại
-KEEP_WAITING = 3                            # bản chờ chọn giữ lại (mới nhất)
+KEEP_WAITING = 1
 BUILD_ID = re.compile(r"b[0-9a-f]{12}|legacy-\d+")
 BUILD_FIELDS = ("id", "version", "commit", "branch", "buildNumber", "buildUrl", "environment", "digest", "source",
                 "uploaded_by", "uploaded_at", "activated_at", "file", "size")
@@ -211,11 +212,19 @@ def install_build(s, src, user: str, name: str = "", meta: dict | None = None, a
                 return {"status": "unchanged", "build": _public(_read_info(d), where == "current"), "pruned": []}
             if where == "stored":
                 return {"status": "current", **activate_build(s, bid)}
+            unpacked = sum(entry.file_size for entry in zf.infolist())
+            if unpacked > BUILD_BUDGET:
+                raise ApiError(413, "Bản WebGL vượt ngân sách 800 MB; nén bản game trước khi tải lên.")
+            if not activate and disk_bytes(game_dir(s)) + unpacked > BUILD_BUDGET:
+                raise ApiError(507, "Không đủ chỗ giữ bản game chờ trong ngân sách 800 MB.")
+            require_storage(s, unpacked + 64 * 1024)
             now = time.time()
             meta.update({"id": bid, "key": key, "uploaded_by": user, "uploaded_at": _iso(now), "uploaded_ts": now,
                          "file": name or meta.get("file") or "", "size": size})
             tmp = _extract(s, zf, root, meta)
             try:
+                if disk_bytes(tmp) + (0 if activate else disk_bytes(game_dir(s))) > BUILD_BUDGET:
+                    raise ApiError(507, "Không đủ chỗ giữ bản game mới trong ngân sách 800 MB.")
                 if activate:
                     _swap_in(s, tmp)
                 else:
@@ -297,12 +306,19 @@ def remove_build(s, bid: str) -> dict:
 
 
 def prune(s) -> list:
-    """Giữ KEEP_ROLLBACK bản đã dùng gần nhất và KEEP_WAITING bản chờ mới nhất; trả id đã xoá."""
     stored = [b for b in list_builds(s) if not b["current"]]
     old = sorted((b for b in stored if b["status"] == "rollback"), key=lambda b: b.get("activated_at") or "",
                  reverse=True)
     waiting = [b for b in stored if b["status"] == "waiting"]
-    removed = old[KEEP_ROLLBACK:] + waiting[KEEP_WAITING:]
+    total = disk_bytes(game_dir(s))
+    removed = []
+    for group, keep in ((waiting, KEEP_WAITING), (old, KEEP_ROLLBACK)):
+        for index, build in enumerate(group):
+            size = disk_bytes(builds_dir(s) / build["id"])
+            if index >= keep or total + size > BUILD_BUDGET:
+                removed.append(build)
+            else:
+                total += size
     for b in removed:
         shutil.rmtree(builds_dir(s) / b["id"], ignore_errors=True)
     return [b["id"] for b in removed]
@@ -337,6 +353,7 @@ def create_router(s, current_user, require_admin) -> APIRouter:
                 if now - old.stat().st_mtime > UPLOAD_TTL:
                     shutil.rmtree(old, ignore_errors=True) if old.is_dir() else old.unlink(missing_ok=True)
         uid = secrets.token_hex(8)
+        require_storage(s, size)
         (uploads / uid).mkdir(parents=True)
         (uploads / uid / "meta.json").write_text(json.dumps({"size": size, "name": name, "user": user}), encoding="utf-8")
         return {"id": uid, "chunk": CHUNK_BYTES, "parts": -(-size // CHUNK_BYTES)}
@@ -353,6 +370,7 @@ def create_router(s, current_user, require_admin) -> APIRouter:
         want = min(CHUNK_BYTES, meta["size"] - i * CHUNK_BYTES)
         if len(data) != want:
             raise ApiError(400, f"Phần {i} dài {len(data)} byte, cần {want}")
+        require_storage(s, max(0, len(data) - disk_bytes(d / f"{i:05d}.part")))
         (d / f"{i:05d}.part").write_bytes(data)
         return {"ok": True, "part": i}
 
@@ -398,6 +416,7 @@ def create_router(s, current_user, require_admin) -> APIRouter:
                     written += len(chunk)
                     if written > MAX_ZIP_BYTES:
                         raise ApiError(413, "Zip quá 1 GB")
+                    require_storage(s, len(chunk))
                     out.write(chunk)
             return await run_in_threadpool(install_zip, s, tmp_zip, user, name)
         finally:

@@ -10,8 +10,30 @@ import { createApp } from '../app.mjs';
 import { settingsFromEnv } from '../config.mjs';
 import { loadGame } from '../game.mjs';
 import { advanceClock } from '../store.mjs';
+import zlib from 'node:zlib';
+import { DatabaseSync } from 'node:sqlite';
 
 const SAMPLE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'contracts', 'sample', 'manifest.json');
+
+test('Admin backup saves a compressed SQLite snapshot and storage includes loose files', async t => {
+  const { dir, as } = await start(t);
+  const A = as('a@sonat.vn');
+  fs.writeFileSync(path.join(dir, 'leftover.zip'), Buffer.alloc(1024));
+  const backup = await A('POST', '/api/admin/backup');
+  assert.equal(backup.status, 200);
+  assert.match(backup.data.file, /\.db\.gz$/);
+  const packed = fs.readFileSync(path.join(dir, 'backups', backup.data.file));
+  assert.equal(packed.length, backup.data.size);
+  const restored = path.join(dir, 'restored.db');
+  fs.writeFileSync(restored, zlib.gunzipSync(packed));
+  const check = new DatabaseSync(restored);
+  assert.equal(check.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+  assert.ok(check.prepare('SELECT COUNT(*) n FROM packs').get().n > 0);
+  check.close();
+  const report = (await A('GET', '/api/admin/storage')).data;
+  assert.ok(report.totalBytes >= report.database + report.backups + 1024);
+  assert.equal(report.limit, 1_500_000_000);
+});
 
 async function start(t, env = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'levelcore-trash-'));
