@@ -11,7 +11,7 @@ import { parseLevelQuery, queryMatches } from './query.mjs';
 import { $, $$, confirmDialog, esc, fmtTime, openDialog, shortUser, toast } from './ui.mjs';
 import { canCapture, highlight as gameHighlight, isPreviewing, mountDock, onBuildEvent, refreshPreview, showLevel } from './webgame.mjs';
 import * as sync from './sync.mjs';
-import { mountWhatsNew } from './whatsnew.mjs';
+import { mountWhatsNew, openWhatsNew } from './whatsnew.mjs';
 import { openAdmin } from './adminui.mjs';
 import { captureMissing, invalidate as invalidateThumbs, renderGrid } from './gallery.mjs';
 import { actionFor, bridgeMouseButtons, configureKeymap, openShortcuts } from './keymap.mjs';
@@ -25,6 +25,10 @@ import game from '../game/game.mjs';
 setStoragePrefix(game.storagePrefix);
 const PACK_KEY = `${game.storagePrefix}.pack`;
 const GRID_KEY = `${game.storagePrefix}.grid`;
+const FOCUS_KEY = `${game.storagePrefix}.focus`;
+const NOTICE_KEY = `${game.storagePrefix}.noticeSeen`;
+const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
+const store = (key, v) => { try { localStorage.setItem(key, v); } catch { /* trình duyệt chặn lưu trữ */ } };
 const THEME_KEY = `${game.storagePrefix}.theme`;
 
 const state = {
@@ -49,13 +53,25 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const features = () => ({ levelhub: true, bi: true, webgame: true, ...(state.me?.features || {}) });
 /** Quyền theo việc (server Node); server cũ chỉ có cờ admin. */
 const can = action => state.me?.rights?.[action] ?? !!state.me?.admin;
-let gridMode = (() => { try { return localStorage.getItem(GRID_KEY) === '1'; } catch { return false; } })();
+// Lưới ảnh hay danh sách: người dùng chọn thì nhớ, chưa chọn thì theo game (manifest listView: 'grid' cho game nhìn hình là nhận ra).
+let gridMode = stored(GRID_KEY) != null ? stored(GRID_KEY) === '1' : game.listView === 'grid';
 
+/** Dải thông báo chung của Quản trị; người đã bấm × thì không hiện lại cùng nội dung. */
 function showNotice(n) {
   const el = $('#notice');
-  el.hidden = !n?.text;
-  el.textContent = n?.text || '';
+  el.hidden = !n?.text || stored(NOTICE_KEY) === n.text;
+  $('.notice-text', el).textContent = n?.text || '';
   el.className = `notice ${n?.level === 'warn' ? 'warn' : ''}`;
+  $('button', el).onclick = () => {
+    store(NOTICE_KEY, n.text);
+    el.hidden = true;
+  };
+}
+
+function setFocus(on) {
+  document.body.classList.toggle('focus', on);
+  $('#btn-focus').classList.toggle('active', on);
+  store(FOCUS_KEY, on ? '1' : '0');
 }
 const packInfo = () => state.packs.find(p => p.name === state.pack);
 const packReadOnly = () => { const p = packInfo(); return !p || p.archived || p.production; };
@@ -104,7 +120,8 @@ async function boot() {
   $('#btn-admin').hidden = !(features().admin && state.me.admin);
   $('#btn-share').hidden = !(features().share && features().webgame);
   showNotice(state.me.notice);
-  if (features().webgame) mountDock($('#game-dock'), { ...game.webgame, record: features().plays === true });
+  setFocus(stored(FOCUS_KEY) === '1');
+  if (features().webgame) mountDock($('#game-dock'), { ...game.webgame, record: features().plays === true, manageBuilds: can('gameBuilds') });
   else {
     $('#game-dock').innerHTML = '<p class="muted small dock-off">Server này chưa có chơi thử bằng bản WebGL của game.</p>';
     $('#btn-play').hidden = true;
@@ -401,11 +418,16 @@ function renderPanel() {
   $('#lv-meta').textContent = meta;
   $('#lv-meta').title = meta;
   const lock = cur.lock && cur.lock.holder !== state.me.email ? cur.lock : null;
-  $('#lv-lock').textContent = state.editing ? '✎ Bạn đang sửa' : lock ? `🔒 ${shortUser(lock.holder)} đang sửa` : 'Chỉ xem';
+  // Đang xem: chỉ Sửa / Chơi thử. Đang sửa: Lưu / Hoàn tác / Xong. Chip khoá chỉ hiện khi có người đang sửa.
+  $('#lv-lock').textContent = state.editing ? '✎ Bạn đang sửa' : lock ? `🔒 ${shortUser(lock.holder)} đang sửa` : '';
+  $('#lv-lock').hidden = !state.editing && !lock;
   const ro = packReadOnly();
   $('#btn-edit').hidden = state.editing;
-  $('#btn-edit').disabled = ro;
+  $('#btn-edit').disabled = ro || !!lock;
+  $('#btn-edit').title = ro ? 'Bộ chỉ đọc (production / lưu trữ)' : lock ? `${shortUser(lock.holder)} đang sửa level này` : 'Khoá level để sửa (E)';
   $('#btn-done').hidden = !state.editing;
+  $('#btn-save').hidden = !state.editing;
+  $('#btn-revert').hidden = !state.editing;
   $('#btn-delete').disabled = ro;
   $('#btn-relevel').disabled = packInfo()?.archived;
   markDirty();
@@ -433,6 +455,13 @@ function renderOverview() {
   $('#validation').innerHTML = v.errors.map(x => `<div class="err">${esc(x)}</div>`).join('')
     + v.warnings.map(x => `<div class="warn">${esc(x)}</div>`).join('')
     + (v.isValid ? '<div class="ok">Hợp lệ</div>' : '');
+  const chip = $('#lv-valid');
+  chip.textContent = !v.isValid ? `✗ ${v.errors.length} lỗi` : v.warnings.length ? `! ${v.warnings.length} cảnh báo` : '✓ Hợp lệ';
+  chip.className = `chip ${!v.isValid ? 'err' : v.warnings.length ? 'warn' : 'ok'}`;
+  chip.title = [...v.errors, ...v.warnings].join('\n') || 'Level qua kiểm định';
+  const hasInfo = $('#game-info').childElementCount > 0;
+  $('.col-info').hidden = !hasInfo;
+  $('.overview').classList.toggle('with-info', hasInfo);
   drawPreview();
 }
 
@@ -989,6 +1018,7 @@ const ACTIONS_RUN = {
   'global.reorder': () => features().reorder && reorder(),
   'global.theme': () => $('#btn-theme').click(),
   'global.shortcuts': () => openShortcuts(),
+  'global.focus': () => setFocus(!document.body.classList.contains('focus')),
   'level.save': () => save(),
   'level.edit': () => (state.editing ? stopEdit() : startEdit()),
   'level.play': () => features().webgame && showInGame('play'),
@@ -1124,8 +1154,21 @@ function wire() {
   $('#btn-relevel').addEventListener('click', relevel);
   $('#btn-promote').addEventListener('click', promote);
   // menu ⋯: bấm một mục thì đóng menu; bấm ra ngoài cũng đóng
-  $('.more-menu .menu').addEventListener('click', () => $('.more-menu').removeAttribute('open'));
-  document.addEventListener('click', e => { if (!e.target.closest('.more-menu')) $('.more-menu').removeAttribute('open'); });
+  // menu (⋯, Nhập / Tải, tài khoản): bấm một mục thì đóng; bấm ra ngoài hoặc mở menu khác cũng đóng
+  for (const m of $$('.more-menu')) {
+    $('.menu', m).addEventListener('click', () => m.removeAttribute('open'));
+    m.addEventListener('toggle', () => { if (m.open) for (const o of $$('.more-menu')) if (o !== m) o.removeAttribute('open'); });
+  }
+  document.addEventListener('click', e => { for (const m of $$('.more-menu')) if (!m.contains(e.target)) m.removeAttribute('open'); });
+  $('#btn-whatsnew').addEventListener('click', () => openWhatsNew());
+  $('#btn-focus').addEventListener('click', () => setFocus(!document.body.classList.contains('focus')));
+  $('#lv-valid').addEventListener('click', () => {
+    setTab('overview');
+    const card = $('#valid-card');
+    card.scrollIntoView({ block: 'nearest' });
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1200);
+  });
   $('#btn-play').addEventListener('click', () => showInGame('play').catch(e => toast(e.message, 'err')));
   $('#btn-download').addEventListener('click', () =>
     downloadBlob(new Blob([JSON.stringify(state.draft, null, 2) + '\n'], { type: 'application/json' }), `${state.sel}.json`));

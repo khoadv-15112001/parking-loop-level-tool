@@ -9,6 +9,7 @@ const ACTIONS = [
   { id: 'global.overview', scope: 'global', label: 'Tổng quan bộ', keys: ['o'] },
   { id: 'global.reorder', scope: 'global', label: 'Xếp thứ tự bộ', keys: ['shift+r'] },
   { id: 'global.theme', scope: 'global', label: 'Đổi giao diện sáng / tối', keys: ['t'] },
+  { id: 'global.focus', scope: 'global', label: 'Chế độ tập trung (ẩn danh sách level)', keys: ['\\'] },
   { id: 'global.shortcuts', scope: 'global', label: 'Bảng phím tắt', keys: ['?'] },
   { id: 'level.save', scope: 'level', label: 'Lưu', keys: ['ctrl+s'] },
   { id: 'level.edit', scope: 'level', label: 'Sửa / Xong', keys: ['e'] },

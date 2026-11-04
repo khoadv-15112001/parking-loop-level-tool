@@ -49,21 +49,34 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .login-card label { display: grid; gap: 4px; }
 
 #app { display: flex; flex-direction: column; height: 100%; }
-.topbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px; background: var(--lc-surface);
+.topbar { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; padding: 6px 12px; background: var(--lc-surface);
   border-bottom: 1px solid var(--lc-border); }
 .brand { font-weight: 700; margin-right: 8px; }
 .brand .version { font-weight: 400; font-size: 11px; color: var(--lc-muted); }
 .brand .version.clickable { cursor: pointer; text-decoration: underline dotted; }
 .whatsnew h3 { font-size: 14px; margin: 12px 0 4px; }
 .whatsnew ul { margin: 2px 0 6px; padding-left: 18px; }
-.pack-pick select { margin-left: 4px; }
+/* Hàng trên cùng: bộ đang mở | việc với cả bộ | … | người online, Quản trị, tài khoản. Màn hẹp: nút chỉ còn icon. */
+.pack-ctl { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.pack-ctl select { max-width: 240px; min-width: 120px; font-weight: 600; }
+.pack-actions { display: flex; gap: 4px; align-items: center; margin-left: 6px; padding-left: 10px; border-left: 1px solid var(--lc-border); }
+.pack-actions .lb, .topbar #btn-admin .lb { margin-left: 4px; }
+.pack-actions .more-menu .menu { left: 0; right: auto; min-width: 230px; }
+button.icon { padding: 4px 8px; }
+.user-menu > summary { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-menu .menu { min-width: 190px; }
+@media (max-width: 1350px) { .topbar .lb { display: none; } .pack-ctl select { max-width: 170px; } }
 .conn { width: 10px; height: 10px; border-radius: 50%; background: var(--lc-err); display: inline-block; }
 .conn.on { background: var(--lc-ok); }
 
-.layout { flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }
+.layout { flex: 1; display: grid; grid-template-columns: clamp(230px, 19vw, 320px) 1fr; min-height: 0; }
+body.focus .layout { grid-template-columns: 0 1fr; }
+body.focus .sidebar { display: none; }
 .sidebar { border-right: 1px solid var(--lc-border); display: flex; flex-direction: column; min-height: 0; background: var(--lc-surface); }
-.list-tools { display: flex; gap: 6px; padding: 8px; }
-.list-tools input { flex: 1; min-width: 0; }
+.list-tools { display: grid; gap: 6px; padding: 8px; }
+.list-tools input { width: 100%; min-width: 0; }
+.list-tools .row { display: flex; gap: 6px; }
+.list-tools .row select { flex: 1; min-width: 0; }
 #list-stats { padding: 0 10px 6px; }
 .level-list { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
 .level-list li { display: grid; grid-template-columns: 44px 1fr auto; gap: 2px 8px; padding: 6px 10px; cursor: pointer;
@@ -94,11 +107,18 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .tab { padding: 12px 16px 24px; }
 
 /* Tổng quan: thông số (trái) | gameplay (giữa, to nhất) | thông tin (phải); mỗi cột tự cuộn, game luôn cao bằng màn hình */
-.overview { display: grid; grid-template-columns: minmax(340px, 440px) minmax(380px, 1fr) minmax(230px, 290px); gap: 12px;
+.overview { display: grid; grid-template-columns: minmax(250px, 340px) minmax(0, 1fr); gap: 12px;
   height: 100%; }
 .overview > div { min-height: 0; min-width: 0; }
 .col-form, .col-info { overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
 .col-game { display: flex; }
+.overview.with-info { grid-template-columns: minmax(250px, 340px) minmax(0, 1fr) minmax(220px, 280px); }
+/* Chip kiểm định ở đầu panel: thấy ngay level có lỗi không, bấm để xem thẻ Kiểm định */
+.chip { flex: none; border-radius: 999px; padding: 1px 10px; font-size: 12px; }
+.chip.ok { color: var(--lc-ok); border-color: currentColor; }
+.chip.err { color: var(--lc-err); border-color: currentColor; }
+.chip.warn { color: var(--lc-warn); border-color: currentColor; }
+.card.flash { outline: 2px solid var(--lc-accent); }
 #game-info { display: contents; }   /* card của game nằm thẳng trong cột phải (cùng khoảng cách) */
 .overview .card { background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 10px; padding: 10px 12px; }
 .overview h3 { margin: 0 0 8px; font-size: 14px; }
@@ -145,12 +165,12 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 }
 /* Laptop (≤1500px, vd 1920px màn hình scale 150% ≈ 1280px): 2 cột — thông số trên + thông tin dưới (mỗi phần tự cuộn) |
    game bên phải. 3 cột ở cỡ này không đủ chỗ, khung game đè lên cột thông tin. */
+/* Laptop: cột thông tin của game nằm dưới thông số (bên trái), khung game giữ cả chiều cao bên phải */
 @media (min-width: 901px) and (max-width: 1500px) {
-  .layout { grid-template-columns: 240px 1fr; }
-  .overview { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
-  .col-form { grid-column: 1; grid-row: 1; }
-  .col-info { grid-column: 1; grid-row: 2; }
-  .col-game { grid-column: 2; grid-row: 1 / 3; }
+  .overview.with-info { grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+  .with-info .col-form { grid-column: 1; grid-row: 1; }
+  .with-info .col-info { grid-column: 1; grid-row: 2; }
+  .with-info .col-game { grid-column: 2; grid-row: 1 / 3; }
 }
 
 .login-dev { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--lc-border); }
@@ -213,7 +233,8 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .webgame .wg-head > button { flex: none; }
 
 /* Dải thông báo chung (Quản trị) */
-.notice { padding: 6px 12px; background: var(--lc-sel); border-bottom: 1px solid var(--lc-border); font-size: 13px; }
+.notice { display: flex; align-items: center; gap: 8px; padding: 4px 12px; background: var(--lc-sel); border-bottom: 1px solid var(--lc-border); font-size: 13px; }
+.notice .notice-text { flex: 1; }
 .notice.warn { color: var(--lc-warn); }
 /* Hộp rộng: bảng, biểu đồ, xếp thứ tự */
 .dialog.wide { width: min(1100px, 100%); }
@@ -255,3 +276,4 @@ ul.plays { margin: 0; padding-left: 18px; }
 ul.plays li { cursor: pointer; }
 ul.plays li:hover { text-decoration: underline; }
 table.events code { white-space: pre-wrap; word-break: break-all; }
+.list-tools .row button { flex: none; }

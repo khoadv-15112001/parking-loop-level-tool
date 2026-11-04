@@ -153,6 +153,7 @@ function build() {
     <div class="wg-frame"><iframe title="${esc(proto.title)}" allow="autoplay; fullscreen"></iframe></div>
     <ul class="wg-results small"></ul>`;
   dock.replaceChildren(el);
+  if (!proto.manageBuilds) $('[data-act="upload"]', el).remove();
   const iframe = $('iframe', el);
   g = { el, iframe, ready: false, pending: null, want: null, pack: '', levels: null, phase: 'idle', results: [],
     mode: 'preview', queued: null, highlight: null, source: 'draft' };
@@ -218,16 +219,16 @@ async function available() {
 
 function showMissing() {
   dock.innerHTML = `<div class="game-missing"><p>Chưa có bản game WebGL trên server để xem level bằng game thật.</p>
-    <button class="primary">⬆ Bản game</button></div>`;
-  dock.querySelector('button').addEventListener('click', () => openBuilds());
+    ${proto.manageBuilds ? '<button class="primary">⬆ Bản game</button>' : '<p class="small">Nhờ admin tải bản game lên (hoặc bật CI).</p>'}</div>`;
+  dock.querySelector('button')?.addEventListener('click', () => openBuilds());
 }
 
 /** Gắn khung game vào cột preview của panel level. */
 /** opts = game.webgame {id, tag, title, buildHint} (game/web/game.mjs). */
 export function mountDock(container, opts = {}) {
   dock = container;
-  const { record, ...protocol } = opts;
-  proto = { ...proto, ...protocol };
+  const { record, manageBuilds = true, ...protocol } = opts;
+  proto = { ...proto, ...protocol, manageBuilds };
   recorder = record ? new PlayRecorder('/api', authHeaders) : null;
 }
 

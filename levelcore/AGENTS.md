@@ -47,6 +47,10 @@ Game cần core làm thêm việc gì thì thêm điểm mở rộng ở repo co
   chơi dùng cho phân tích, solver, AI về sau (`levelcore/contracts/README.md`, mục Bridge).
 - Giao diện riêng vẫn phải giữ các luồng an toàn của core: khoá khi sửa, lưu với `If-Match`, xử lý 412 (xung đột) và 423
   (đang khoá), nhập qua bước xem trước.
+- Bố cục theo người dùng và tần suất, như vỏ của core: việc GD / Creative làm hằng ngày (tìm, mở, sửa, chơi thử, lưu) nằm
+  ngoài và luôn thấy; việc với cả bộ ở một hàng; việc ít dùng (nhập / tải, audit, thùng rác) trong menu; việc của admin
+  (Quản trị, bản game) chỉ hiện với người có quyền (`rights` trong `/api/me`). Nút chỉ hiện khi dùng được ở trạng thái đó
+  (Lưu chỉ khi đang sửa). Phần nhìn level (khung game, editor của game) chiếm nhiều chỗ nhất.
 
 ## Deploy và phát hành
 

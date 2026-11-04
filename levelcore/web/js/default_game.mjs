@@ -24,6 +24,7 @@ export default {
   fields: rules.fields || [],
   thumbnail: rules.thumbnail || null,
   overview: manifest.overview || {},
+  listView: manifest.listView || 'list',
   searchText: summary => summaryText(summary),
   listItem: summary => ({ tags: '', sub: esc(summaryText(summary)) }),
 };

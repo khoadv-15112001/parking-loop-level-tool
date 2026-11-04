@@ -22,7 +22,7 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 ### Thay đổi
 - Tìm level theo số, dải `10-20`, danh sách `2,5,9` và chữ không dấu; form thuộc tính từ `fields` của game.
 - Lưu và nhập: xung đột có so sánh và "Lưu thành bản sao"; Nhập xem trước từng level trước khi ghi.
-- Kiểm định bộ: bấm số level trong bảng lỗi để mở level đó.
+- Giao diện mặc định: một hàng việc theo bộ, việc ít dùng và admin vào menu, Lưu chỉ hiện khi sửa, chip kiểm định.
 - Đẩy lên BI: lỗi 409 và 413 có gợi ý; BI không trả lời sau khi tạo bộ thì tool tự tìm lại bộ vừa tạo.
 - Bản game: giữ một bản trước để quay lại; gửi lại cùng bản build không cài lần hai.
 
