@@ -23,13 +23,15 @@ thì ghi lại để đề xuất cho repo core.
 ## 3. Sinh và viết phần của game
 
 ```sh
-node levelcore/tools/new_game.mjs --tool FishLevel --game "Fish Sort" --prefix FISHLEVEL --slug fishsort --runtime node
+node levelcore/tools/new_game.mjs --tool FishLevel --game "Fish Sort" --prefix FISHLEVEL --slug fishsort --runtime node \
+  --port 8893 --raw <thư mục raw của game>
 ```
 
-1. Chép raw thật vào `game/tests/raw/<số>.json` (không sửa tay).
+1. `--raw` chép tối đa 8 raw thật vào `game/tests/raw/` (giữ nguyên byte); thêm tay nếu cần đủ các loại cơ chế.
 2. Viết `game/web/rules.mjs` từ raw và luật của Dev Game: `validateLevel`, `blankLevel`; thêm `levelSummary` (vài số cho
-   danh sách), `setLevelNumber` nếu raw chứa số level, `fields` cho các thông số GD hay sửa, `describeHub` / `hubLayout`
-   nếu đẩy Level Hub. Hợp đồng từng hook: `levelcore/contracts/README.md`.
+   danh sách), `levelChanges`, `setLevelNumber` nếu raw chứa số level, `fields` cho các thông số GD hay sửa,
+   `describeHub` / `hubLayout` nếu đẩy Level Hub. Chữ ký, kết quả và mặc định từng hook: bảng "Module luật" trong
+   `levelcore/contracts/README.md`.
 3. Điền `game/manifest.json` (`levelhub`, `webgame`, `biAppId`) và `AGENTS.md` gốc (nguồn raw, định dạng).
 4. `node --test game/tests/*.test.mjs` xanh. Test báo raw đổi qua JSON thì ghi lại cho người dùng.
 
@@ -38,7 +40,9 @@ Không chép luật, field hay giao diện từ `levelcore/contracts/sample` hay
 ## 4. Chạy thử
 
 Bấm đúp `ChayDev.bat` (hoặc `node levelcore/node/server.mjs` với `<PREFIX>_DEV=1`), vào bằng email DEV. Nhập zip raw
-thật, mở một level, sửa một field, lưu, xem Lịch sử. Có bản WebGL thì tải lên ở ⬆ trong khung game và chơi thử.
+thật (`node levelcore/tools/zip_raw.mjs game/tests/raw data/raw.zip`), mở một level, sửa một field, lưu, xem Lịch sử. Gọi
+API bằng tay: mục "Gọi API bằng tay" trong `levelcore/contracts/README.md`. Có bản WebGL thì tải lên ở ⬆ trong khung
+game và chơi thử.
 
 ## 5. Giao diện
 

@@ -11,7 +11,7 @@ Phần riêng của __GAME__ ở `game/`:
 | `game/web/releases.json` | bảng Có gì mới trong app |
 | `game/tests/` | test của game, raw thật ở `game/tests/raw/` |
 
-- Chạy local: bấm đúp `ChayDev.bat` → http://localhost:8880/app/ (server __RUNTIME__, đổi ở `game/game.env`)
+- Chạy local: bấm đúp `ChayDev.bat` → http://localhost:__PORT__/app/ (server __RUNTIME__, đổi ở `game/game.env`)
 - Test: `node --test game/tests/*.test.mjs`
 - Deploy: `bi.yaml` (slug `__SLUG__`), phát hành bằng tag `__SLUG__-v0.1.0`
 - Lấy bản mới của core: `git fetch core && git merge core/main` ([`levelcore/FORK.md`](levelcore/FORK.md))

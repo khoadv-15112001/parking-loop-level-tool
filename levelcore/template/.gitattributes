@@ -1,0 +1,2 @@
+# Raw level của game giữ nguyên byte khi checkout (không đổi xuống dòng), để test so được với raw gốc.
+game/tests/raw/** -text

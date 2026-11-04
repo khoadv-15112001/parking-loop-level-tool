@@ -39,7 +39,7 @@ test('generator: chỉ sinh dữ liệu và luật, thay README / AGENTS của c
   assert.ok(written.includes('README.md') && written.includes('game/web/rules.mjs'));
   assert.ok(!written.some(f => /\.(css|html)$|game\.mjs$/.test(f)), `có file giao diện: ${written}`);
   const all = written.map(f => fs.readFileSync(path.join(repo, f), 'utf8')).join('\n');
-  assert.doesNotMatch(all, /__(TOOL|GAME|PREFIX|SLUG|STORAGE|RUNTIME|DOCKERFILE|DBFILE)__/);
+  assert.doesNotMatch(all, /__(TOOL|GAME|PREFIX|SLUG|STORAGE|RUNTIME|DOCKERFILE|DBFILE|PORT)__/);
   assert.match(fs.readFileSync(path.join(repo, 'README.md'), 'utf8'), /^# FishLevel/);
   assert.match(fs.readFileSync(path.join(repo, 'game', 'game.env'), 'utf8'), /RUNTIME=node/);
   assert.throws(() => scaffold(repo, { tool: 'X', game: 'X', prefix: 'X', slug: 'x' }), /đã có/);
@@ -47,6 +47,20 @@ test('generator: chỉ sinh dữ liệu và luật, thay README / AGENTS của c
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT'));
   const own = spawnSync(process.execPath, ['--test', ...['rules', 'releases'].map(n => path.join(repo, 'game', 'tests', `${n}.test.mjs`))], { encoding: 'utf8', env, timeout: 60000 });
   assert.equal(own.status, 0, own.stdout + own.stderr);
+});
+
+test('generator: --raw chép tối đa 8 raw rải đều, giữ nguyên byte; --port vào game.env', () => {
+  const repo = newRepo();
+  const src = path.join(repo, 'raw-src');
+  fs.mkdirSync(src);
+  for (let n = 1; n <= 20; n++) fs.writeFileSync(path.join(src, `${n}.json`), `{\r\n  "n": ${n}.0\r\n}`);
+  fs.writeFileSync(path.join(src, 'notes.txt'), 'x');
+  const { written } = scaffold(repo, { tool: 'AntDemo', game: 'Antopia', prefix: 'ANTDEMO', slug: 'antdemo', port: '8893', raw: src });
+  const raws = written.filter(f => f.startsWith('game/tests/raw/') && f.endsWith('.json'));
+  assert.deepEqual(raws.map(f => Number.parseInt(path.basename(f), 10)), [1, 4, 6, 9, 12, 15, 17, 20]);
+  assert.equal(fs.readFileSync(path.join(repo, raws[0]), 'utf8'), '{\r\n  "n": 1.0\r\n}');
+  assert.match(fs.readFileSync(path.join(repo, 'game', 'game.env'), 'utf8'), /PORT=8893/);
+  assert.ok(fs.existsSync(path.join(repo, '.gitattributes')));
 });
 
 test('generator: game sinh ra chạy trên server Node với giao diện mặc định của core', async t => {

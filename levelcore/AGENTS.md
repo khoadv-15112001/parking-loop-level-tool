@@ -23,11 +23,13 @@ Game cần core làm thêm việc gì thì thêm điểm mở rộng ở repo co
 
 ## Viết phần của game
 
-1. Lấy vài level raw thật đặt vào `game/tests/raw/<số>.json`. Luật viết theo raw thật, không đoán.
-2. `game/web/rules.mjs`: `validateLevel(level, {levelNo, formatVersion})` và `blankLevel(n, template?)` là bắt buộc. Hook
-   thêm khi cần (`levelSummary`, `levelChanges`, `setLevelNumber`, `describeHub`, `hubLayout`, danh sách `fields`):
-   `levelcore/contracts/README.md`, mục "Game khai bằng manifest". File này chạy cả ở server lẫn trình duyệt: JS thuần,
-   không DOM, không `node:*`.
+1. Lấy vài level raw thật đặt vào `game/tests/raw/<số>.json` (`new_game.mjs --raw <thư mục>` chép sẵn). Luật viết theo
+   raw thật, không đoán.
+2. `game/web/rules.mjs`: `validateLevel(level, {levelNo, formatVersion})` và `blankLevel(n, template)` là bắt buộc. Hook
+   thêm khi cần (`levelSummary`, `levelChanges`, `setLevelNumber`, `describeHub`, `hubLayout`, danh sách `fields`): bảng
+   "Module luật" trong `levelcore/contracts/README.md`. File này chạy cả ở server lẫn trình duyệt: JS thuần, không DOM,
+   không `node:*`; được import file khác trong `game/web/`. Dùng lại validator sẵn có của repo game thì chép các module
+   cần vào `game/web/` và ghi commit nguồn trong `AGENTS.md` gốc, để biết khi nào phải chép lại.
 3. `game/manifest.json`: tên, tiền tố biến, `formatVersion`, `levelhub` (acronym, mã vật cản), `webgame` (id, tag của
    bridge trong bản Unity). Game đổi định dạng level thì tăng `formatVersion`.
 4. Chạy test, mở tool, nhập một zip raw thật, sửa một level, chơi thử nếu đã có bản WebGL.

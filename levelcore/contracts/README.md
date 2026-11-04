@@ -89,10 +89,27 @@ Luôn là JSON `{"detail": "…", …}`: 400 dữ liệu sai · 401 chưa đăng
 404 · 409 trùng hoặc mất khoá · 412 sửa từ bản cũ (kèm `head_rev`, `author`, `body` của head) · 413 quá lớn ·
 422 lỗi kiểm định (kèm `validation`) · 423 đang bị khoá (kèm `holder`) · 428 thiếu `If-Match`.
 
+## Gọi API bằng tay (DEV)
+
+Server chạy với `<PREFIX>_DEV=1` nhận header `X-Dev-User`. Body là dữ liệu thô, không bọc multipart:
+
+```sh
+node levelcore/tools/zip_raw.mjs game/tests/raw data/raw.zip            # zip mọi <số>.json, chạy được trên mọi hệ điều hành
+curl -X POST -H "X-Dev-User: a@sonat.vn" -H "Content-Type: application/zip" --data-binary @data/raw.zip \
+  "http://localhost:8880/api/packs/develop/import?dry_run=true"          # bỏ dry_run để ghi
+curl -H "X-Dev-User: a@sonat.vn" http://localhost:8880/api/packs/develop/levels/2
+#   → {pack, name, level_no, rev, author, …, level: {…raw…}, lock}; ETag "r<rev>"
+curl -X PUT -H "X-Dev-User: a@sonat.vn" -H 'If-Match: "r1"' -H "Content-Type: application/json" \
+  --data-binary @level2.json http://localhost:8880/api/packs/develop/levels/2   # body là raw của level, không bọc
+```
+
+`PUT` thiếu `If-Match` → 428, `If-Match` cũ → 412 kèm head. Sửa không giữ khoá vẫn lưu được nhưng revision ghi
+`unlocked_edit: true`; vỏ web luôn khoá trước khi sửa (`POST /api/locks/packs/{pack}/levels/{n}`).
+
 ## Nhập level
 
-`POST /api/packs/{pack}/import` nhận zip (mọi `<số>.json`) hoặc JSON `{"<số>": level}` / `{"levels": {…}}`. Trả số đếm theo
-trạng thái và `items: [{name, status, …}]`. Mốc so sánh là revision `import` gần nhất của level.
+`POST /api/packs/{pack}/import` nhận zip (mọi `<số>.json`, `Content-Type: application/zip`) hoặc JSON `{"<số>": level}` /
+`{"levels": {…}}`. Trả số đếm theo trạng thái và `items: [{name, status, …}]`. Mốc so sánh là revision `import` gần nhất.
 
 | Trạng thái | Nghĩa | Có ghi? |
 | --- | --- | --- |
@@ -125,11 +142,33 @@ Bắt buộc: `tool`, `game`, `prefix`, `rules`. `web` (mặc định thư mục
 đọc được mọi file trong đó. Không có `web/game.mjs` thì core dựng nó từ manifest (`slug`, `storagePrefix`, `webgame`) và
 module luật (`fields`). `app` là giao diện riêng của game (bỏ thì dùng vỏ của core). `web/releases.json` là bảng Có gì mới.
 
-Module `rules` bắt buộc có `validateLevel(level, {levelNo, formatVersion}) → {isValid, errors, warnings}` và
-`blankLevel(n, template?)`. Thêm khi cần: `levelSummary(level)`, `levelChanges(prev, cur)`, `setLevelNumber(level, n) → level`,
-`describeHub(level, n)`, `hubLayout(level)`. Node gọi thẳng; Python gọi qua một tiến trình node thường trú
-(`levelcore/runner/game_runner.mjs`). Mỗi revision mới ghi `formatVersion` vào `meta.format`; revision cũ không có thì
-`format` là `null`.
+### Module luật (`rules`)
+
+Node import thẳng; Python gọi qua một tiến trình node thường trú (`levelcore/runner/game_runner.mjs`); trình duyệt import ở
+`/app/game/rules.mjs`. Module có thể import file cùng thư mục `web`, không import `node:*` hay DOM. Hook không export thì
+core dùng mặc định ở cột cuối.
+
+| Export | Chữ ký → kết quả | Core dùng ở | Không có thì |
+| --- | --- | --- | --- |
+| `validateLevel` | `(level, {levelNo, formatVersion}) → {isValid, errors: string[], warnings: string[]}` | Kiểm định, promote, xuất Level Hub, nhập (báo `errors`) | bắt buộc |
+| `blankLevel` | `(n, template) → level`. `template` là level đang mở khi Nhân bản (hoặc `null` khi Mới); hàm tự ghi số `n` nếu raw chứa số | nút Mới / Nhân bản / lưu thành bản sao | bắt buộc |
+| `levelSummary` | `(level) → {khoá: số hoặc chuỗi}` phẳng, vài giá trị | danh sách level (vỏ của core hiện "khoá giá trị"), ô tìm | `{}` |
+| `levelChanges` | `(prev, cur) → string[]`, `null` = không so được | Lịch sử, kết quả lưu (`changes`), audit | `[]` |
+| `setLevelNumber` | `(level, n) → level` (trả bản đã ghi số mới; sửa tại chỗ rồi trả lại cũng được) | đổi số, promote sang số khác | giữ nguyên level |
+| `describeHub` | `(level, n) → {mechanics, difficulty, uniqueColor, totalBlock, time, obstacleCounts: {khoá: số}}` | metadata Level Hub | các giá trị 0 / rỗng |
+| `hubLayout` | `(level) → string` | cột `layout` của Level Hub | `""` |
+| `fields` | mảng `{path, label, type, options?, min?, max?, step?, hint?}` | form tab Tổng quan (vỏ của core) | không có form |
+
+`fields`: `path` là mảng khoá / chỉ số (`['settings', 'time']`, `['goals', 0, 'count']`); `type` là `number`, `text`,
+`bool` hoặc `select`; `options` của `select` là mảng giá trị hoặc `{value, label}`, giá trị giữ đúng kiểu (số vẫn là số).
+Form chỉ ghi đúng field vừa sửa, field khác của level giữ nguyên.
+
+Mỗi revision mới ghi `formatVersion` của manifest vào `meta.format`; revision cũ không có thì `format` là `null`.
+
+### Lưu level lỗi kiểm định
+
+Bộ thường lưu được cả level lỗi kiểm định (để GD lưu bản nháp dở); lỗi hiện ở thẻ Kiểm định và Kiểm định bộ. 422 chỉ ở
+nơi level đi ra ngoài: promote sang bộ production, đổi số trong bộ production, xuất / đẩy Level Hub (kèm báo cáo).
 
 Với game khai bằng manifest, `<PREFIX>_ADMINS` rỗng nghĩa là không ai là admin (trừ máy DEV). Plugin Python cũ giữ luật
 cũ: rỗng là mọi người.
