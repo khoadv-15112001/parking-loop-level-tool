@@ -51,7 +51,7 @@ class DB:
         self.path = path
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
-        self._all: list[sqlite3.Connection] = []
+        self._all: list[tuple[threading.Thread, sqlite3.Connection]] = []
         self._all_lock = threading.Lock()
         self.write_lock = threading.Lock()
         self._gen = 0
@@ -63,14 +63,25 @@ class DB:
     def conn(self) -> sqlite3.Connection:
         c = getattr(self._local, "c", None)
         if c is None or getattr(self._local, "gen", -1) != self._gen:  # sau close() thì mở lại
-            c = sqlite3.connect(self.path, isolation_level=None, timeout=30, check_same_thread=False)
-            c.row_factory = sqlite3.Row
-            c.execute("PRAGMA busy_timeout=30000")
-            c.execute("PRAGMA synchronous=NORMAL")
-            c.execute("PRAGMA foreign_keys=ON")
-            self._local.c, self._local.gen = c, self._gen
             with self._all_lock:
-                self._all.append(c)
+                alive = []
+                for owner, previous in self._all:
+                    if owner.is_alive():
+                        alive.append((owner, previous))
+                    else:
+                        previous.close()
+                self._all = alive
+                c = sqlite3.connect(self.path, isolation_level=None, timeout=30, check_same_thread=False)
+                try:
+                    c.row_factory = sqlite3.Row
+                    c.execute("PRAGMA busy_timeout=30000")
+                    c.execute("PRAGMA synchronous=NORMAL")
+                    c.execute("PRAGMA foreign_keys=ON")
+                except BaseException:
+                    c.close()
+                    raise
+                self._local.c, self._local.gen = c, self._gen
+                self._all.append((threading.current_thread(), c))
         return c
 
     @contextmanager
@@ -88,7 +99,7 @@ class DB:
 
     def close(self):
         with self._all_lock:
-            for c in self._all:
+            for _, c in self._all:
                 try:
                     c.close()
                 except Exception:
