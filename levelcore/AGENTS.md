@@ -20,6 +20,10 @@ Game cần core làm thêm việc gì thì thêm điểm mở rộng ở repo co
 - Test của game: `node --test game/tests/*.test.mjs`. Phải xanh trước khi commit.
 - Sửa core (ở repo core): `node levelcore/contracts/run.mjs` chạy hợp đồng chung với cả hai server.
 - Game mẫu `levelcore/contracts/sample` chỉ là dữ liệu test của core: không chép luật, field hay giao diện từ đó.
+- Tool mới ưu tiên Node (`--runtime node`, `RUNTIME=node`); tính năng mới ưu tiên Node, hợp đồng chung kiểm cả hai
+  server. Python giữ tương thích cho tool cũ hoặc phụ thuộc Python cần thiết; đổi runtime phải kiểm thử phần game.
+- Luật level dùng JS thuần chung server / trình duyệt; solver và tác vụ nặng tách worker hoặc tiến trình khi cần,
+  có giới hạn hàng đợi và số job chạy đồng thời. Chi tiết: `README.md`, mục Chọn runtime cho tool.
 
 ## Viết phần của game
 

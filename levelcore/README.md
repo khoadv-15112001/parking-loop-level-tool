@@ -30,6 +30,22 @@ Quy tắc cho người và agent làm tool (chỗ được sửa, viết phần 
 Fork / đóng góp ngược về core: [FORK.md](FORK.md). Game mới: `node levelcore/tools/new_game.mjs …` hoặc skill
 `levelcore-new-game`; hướng dẫn đủ các bước (repo tool, Unity, Jenkins, BI, Level Hub): [docs/TICH-HOP-GAME.md](docs/TICH-HOP-GAME.md).
 
+## Chọn runtime cho tool
+
+- **Tool mới ưu tiên Node**, dùng `--runtime node` khi tạo game và `RUNTIME=node` trong `game/game.env`. Core ưu tiên
+  phát triển tính năng mới trên Node; hợp đồng chung vẫn được kiểm trên cả Node và Python.
+- Luật level viết bằng JS thuần để dùng chung trên server và trình duyệt. Node gọi trực tiếp module luật; Python
+  gọi qua tiến trình Node thường trú.
+- Giữ Python cho tool đang dùng plugin Python hoặc có phụ thuộc Python cần thiết. Sửa lỗi và giữ tương thích cho
+  các tool này; đổi runtime khi có nhu cầu và đã kiểm thử dữ liệu, hook, giao diện của game.
+- Solver, phân tích nặng, nhập / xuất lớn chạy qua job có giới hạn và tách worker hoặc tiến trình khi cần. SQLite
+  `DatabaseSync` chạy đồng bộ; giữ truy vấn ngắn để thao tác nặng không làm chậm toàn bộ server Node.
+- Cả hai runtime phải giới hạn cache, hàng đợi và số job chạy đồng thời, dọn kết nối khi hết vòng đời. Đo RAM và độ
+  trễ dưới tải thực tế để chọn ngân sách tài nguyên; ngôn ngữ không thay thế việc quản lý tài nguyên.
+
+Server Python giữ một kết nối SQLite cho mỗi luồng còn sống. Khi mở kết nối mới, core đóng kết nối của các luồng
+đã kết thúc; lúc dừng server đóng toàn bộ. Bản vá chỉ có hiệu lực trên tool đã nhận core mới và được deploy lại.
+
 ## Nâng core
 
 1. Đọc phần **Cần chú ý** của các bản mới trong [CHANGELOG.md](CHANGELOG.md) của `core/main`: bước nâng cấp bắt buộc

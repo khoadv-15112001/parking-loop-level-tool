@@ -34,4 +34,4 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Biến `<PREFIX>_CI_*`; manifest thêm `slug`, `storagePrefix`, `webgame`, `app`, `overview`, `layout`.
 - DB: bảng `ci_levels`, `settings`, `plays`, `play_events`, `share_links`, `thumbs`; revision ghi `formatVersion`.
 - Bridge: `ready {caps: ['capture']}`, lệnh `Capture`, sự kiện `{type: 'event'}` vào lượt chơi, `src=` ở `level_start`.
-- Mới: `deploy/Dockerfile.node`, `RUNTIME`, skill `levelcore-new-game`, `game/web/ui.mjs` (`renderEditor`, `levelDetail`).
+- Runtime: ưu tiên Node (`deploy/Dockerfile.node`, `RUNTIME`); Python giữ tương thích, UI thêm qua `game/web/ui.mjs`.

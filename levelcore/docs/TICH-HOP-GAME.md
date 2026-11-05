@@ -4,7 +4,7 @@
 | --- | --- |
 | Áp dụng cho | `level-tool-core` main từ `cb3777e` (core 0.2.0), `sonat-game-cicd` ≥ 2.7.3 |
 | Người đọc | AI agent (Claude Code) làm thay Dev Game là chính; Dev Game đọc để duyệt và tự làm được |
-| Người viết · cập nhật | Duy TD · 04/11/2026 |
+| Người viết · cập nhật | Duy TD · 05/11/2026 |
 | Trạng thái | Draft |
 
 **Tóm tắt.** Mỗi game có một tool level riêng chạy trên BI tại `https://<slug>.tools.sonatgame.com`. Tool là một repo
@@ -113,7 +113,12 @@ Khái niệm:
 | Khoá | GD bấm Sửa thì giữ khoá level; lưu bằng `If-Match: "r<rev>"`; người khác lưu trước thì 412 kèm bản mới |
 | Slot | số level trong bộ; Xếp thứ tự giữ slot, đổi level nằm ở slot |
 | `formatVersion` | phiên bản định dạng level của game (manifest); game đổi định dạng thì tăng |
-| Runtime | server Node (`levelcore/node`, không dependency, có mọi tính năng) hoặc Python (FastAPI, cho game cũ). **Game mới dùng Node** |
+| Runtime | ưu tiên Node (`levelcore/node`) cho tool mới; Python (FastAPI) cho tool cũ hoặc có phụ thuộc Python cần thiết |
+
+Tool mới chọn `--runtime node`, giữ luật level bằng JS thuần để dùng chung với trình duyệt. Solver và tác vụ nặng
+tách worker hoặc tiến trình khi cần, có giới hạn hàng đợi và số job chạy đồng thời. Tool Python đang hoạt động tiếp
+tục được sửa lỗi và giữ tương thích; chuyển runtime cần kiểm thử dữ liệu và hook của game. Xem lý do chọn và quy tắc
+quản lý tài nguyên tại [Chọn runtime cho tool](../README.md#chọn-runtime-cho-tool).
 
 ---
 
