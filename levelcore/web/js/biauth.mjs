@@ -46,3 +46,5 @@ export function biLogin() {
 }
 
 export const biSessionLogin = () => popup('session', 'bi-session');
+export const currentBiLogin = () => cached && cached.expiresAt > Date.now() + REFRESH_SKEW_MS ? cached : null;
+export const clearBiLogin = () => { cached = null; };

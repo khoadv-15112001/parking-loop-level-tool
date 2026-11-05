@@ -197,6 +197,20 @@ export function createApp(game, s) {
 
   // ----- BI Level Hub: token BI trong header X-BI-Token, server chỉ chuyển tiếp; lỗi của BI → 502 (bi_status, bi_step) -----
   api.add('GET', '/api/bi/config', () => bihub.publicConfig(s));
+  api.add('POST', '/api/packs/:pack/levelhub/check', async ({ req, params }) => {
+    const token = biToken(req);
+    store.pack(params.pack);
+    const r = levelhub.parseRequest(params.pack, await objectBody(req));
+    if (!levelhub.joinGeo(r.geo)) throw new ApiError(400, 'Kiểm tra tên trên BI cần chọn GEO');
+    const name = levelhub.composeZipName(levelhub.specOf(game).acronym, levelhub.OS_CODES[r.os], r.fromLv, r.toLv,
+      r.geo, r.why, r.designer, Date.now(), r.version, r.date).slice(0, -4);
+    const appId = bihub.appForOs(s, r.os);
+    try {
+      return await bihub.checkName(s, token, name, appId);
+    } catch (e) {
+      throw bihub.asApiError(e, 'kiểm tra tên (parse-name, quyền Read Asset Group)', appId);
+    }
+  });
   const biCall = async (step, fn) => {
     try {
       return await fn();
@@ -274,7 +288,7 @@ export function createApp(game, s) {
     }
     const { summary } = out;
     db.write(() => store.audit(user, 'levelhub.bi_upload', params.pack, null, null, {
-      zip: biName, env: s.biEnv, app: appId, group: group?.id ?? null, levels: summary.levelCount, missing: summary.missingTotal,
+      zip: biName, env: s.biEnv, app: appId, group: group?.id ?? group?._id ?? group?.groupId ?? null, levels: summary.levelCount, missing: summary.missingTotal,
       manifest: summary.manifest, newer: summary.newer, recovered,
     }));
     return { name: biName, group, levelCount: summary.levelCount, newer: summary.newer, recovered, checked_at: iso(Date.now() / 1000) };

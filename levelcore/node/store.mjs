@@ -328,7 +328,7 @@ export class Store {
     const out = items.map(it => {
       const lv = this.level(pack, it.name);
       const r = lv && this.db.get('SELECT * FROM revisions WHERE level_id=? AND rev=?', lv.id, it.rev);
-      if (!r || r.blob_sha == null || r.blob_sha !== it.sha) throw new ApiError(409, `Level ${it.name} r${it.rev} không khớp bản đã kiểm tra — bấm Kiểm tra lại`);
+      if (!lv || lv.deleted || !r || r.blob_sha == null || r.blob_sha !== it.sha) throw new ApiError(409, `Level ${it.name} r${it.rev} không khớp bản đã kiểm tra — bấm Kiểm tra lại`);
       return {
         name: it.name, level_no: it.level, rev: it.rev, sha: r.blob_sha, author: r.author, updated_at: iso(r.created_at),
         head_rev: lv.head_rev, level: Store.decode(this.blob(r.blob_sha)),

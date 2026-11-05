@@ -138,6 +138,29 @@ const query = pairs => pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeU
 
 export const parseName = (s, token, name, appId = '') => call(s, 'POST', '/parse-name', token, { json: { appId: appId || s.biAppId, name } });
 
+export async function checkName(s, token, name, appId) {
+  try {
+    await parseName(s, token, name, appId);
+    return { name, available: true, suggestion: null };
+  } catch (e) {
+    if (!(e instanceof BiError) || e.biStatus !== 409) throw e;
+  }
+  const parts = name.split('_');
+  const version = parts.pop();
+  const n = Number(version.replace(/^v/i, '')) || 1;
+  if (!Number.isSafeInteger(n) || n > Number.MAX_SAFE_INTEGER - 20) return { name, available: false, suggestion: null };
+  for (let i = 1; i <= 20; i++) {
+    const next = `v${String(n + i).padStart(version.slice(1).length, '0')}`;
+    try {
+      await parseName(s, token, [...parts, next].join('_'), appId);
+      return { name, available: false, suggestion: next };
+    } catch (e) {
+      if (!(e instanceof BiError) || e.biStatus !== 409) throw e;
+    }
+  }
+  return { name, available: false, suggestion: null };
+}
+
 export function createGroup(s, token, name, zip, description = '', appId = '') {
   if (zip.length > MAX_ZIP_BYTES) throw new BiError('Zip lớn hơn 200 MiB — chia nhỏ dải level hoặc bỏ ảnh preview');
   const fields = { appId: appId || s.biAppId, name };

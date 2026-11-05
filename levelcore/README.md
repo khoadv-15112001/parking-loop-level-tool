@@ -73,6 +73,13 @@ Server Python giữ một kết nối SQLite cho mỗi luồng còn sống. Khi 
 | Tổng quan bộ | số level theo nhóm, đường chỉ số theo số level, cảnh báo nhảy vọt / chuỗi dài, so 3 bộ, kiểm định cả bộ (chạy trên web, cả hai server) |
 | Chỉ server Node | link chơi trên điện thoại + QR, lưu mọi lượt chơi (xuất JSONL cho solver / AI), ảnh level, xếp thứ tự theo slot, thùng rác 30 ngày, quản trị trong app (admin, quyền theo việc, thông báo, dung lượng, sao lưu) — [`contracts/README.md`](contracts/README.md) |
 
+Hộp **Thứ tự ▸ ⬆ Xuất Level Hub** dùng chung: dải kéo chọn, chip độ khó / số ảnh / lỗi, ảnh cuộn ngang, thông tin
+group, kiểm tên trùng và gợi ý version, cột **Sẽ gửi**, lịch sử theo bộ. Bấm **Kiểm tra** để chốt revision trước khi
+tải ZIP hoặc đẩy; đổi tham số thì kiểm tra lại. Server Node có **Kèm ảnh game**: chỉ PNG / JPEG / WebP đã chụp, đúng sha
+của revision xuất, không kèm SVG / ảnh sơ đồ; Python vẫn xuất raw và metadata. Ảnh và kết quả kiểm thử:
+[docs/SMOKE-LEVEL-HUB.md](docs/SMOKE-LEVEL-HUB.md). Giao diện riêng của game dùng lại
+`openLevelHub` từ `/core/js/levelhub.mjs`; nhãn độ khó có thể đặt bằng `levelhub.difficultyLabels` trong manifest.
+
 ## Hai cách khai game, hai server
 
 | | Game khai bằng manifest (game mới) | Plugin Python (game cũ) |

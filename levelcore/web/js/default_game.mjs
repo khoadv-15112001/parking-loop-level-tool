@@ -26,6 +26,7 @@ const base = {
   fields: rules.fields || [],
   thumbnail: rules.thumbnail || null,
   overview: manifest.overview || {},
+  levelhub: manifest.levelhub || {},
   listView: manifest.listView || 'list',
   searchText: summary => summaryText(summary),
   listItem: summary => ({ tags: '', sub: summaryText(summary) }),

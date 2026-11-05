@@ -320,6 +320,47 @@ svg.chart circle { cursor: pointer; }
 .dialog { background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 12px; padding: 18px;
   width: min(720px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: grid; gap: 10px; }
 .dialog.wide { width: min(1100px, 100%); }
+.dialog.hub-dialog { width: min(1060px, 96vw); padding: 0; display: flex; flex-direction: column; overflow: hidden; gap: 0; }
+.hub-dialog > h3 { padding: 12px 16px; border-bottom: 1px solid var(--lc-border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; flex: none; }
+.hub-dialog > .dlg-body { min-height: 0; overflow: auto; padding: 12px 16px; }
+.hub-dialog > .actions { margin: 0; padding: 10px 16px; border-top: 1px solid var(--lc-border); background: var(--lc-surface); flex: none; flex-wrap: wrap; }
+.hub-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+.hub-main, .hub-side { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.hub-card { border: 1px solid var(--lc-border); border-radius: 9px; padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; background: var(--lc-surface); }
+.hub-dialog .hub-card h4 { margin: 0; display: flex; gap: 6px; align-items: center; }
+.hub-step { border-radius: 50%; width: 18px; height: 18px; display: inline-grid; place-items: center; background: var(--lc-sel); color: var(--lc-accent); font-size: 11px; }
+.hub-range { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; }
+.hub-range label { width: 76px; }
+.hub-range > span { padding-bottom: 6px; }
+.hub-range .hub-chips { margin-left: auto; align-self: flex-end; }
+.hub-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.hub-chips button { border-radius: 16px; font-size: 12px; padding: 2px 8px; }
+.hub-chips input { width: 110px; font-size: 12px; padding: 3px 8px; }
+.hub-chips span { display: inline-flex; align-items: center; gap: 4px; }
+.hub-chips i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.hub-strip { display: block; width: 100%; height: 64px; background: var(--lc-surface-2); border: 1px solid var(--lc-border); border-radius: 6px; cursor: crosshair; touch-action: none; }
+.hub-stat { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--lc-border); background: var(--lc-surface-2); font-size: 12px; white-space: nowrap; }
+.hub-callout { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border: 1px solid var(--lc-border); background: var(--lc-surface-2); padding: 9px; border-radius: 6px; overflow-wrap: anywhere; }
+.hub-callout.warn, .hub-callout.err { border-color: currentColor; }
+.hub-callout .link { white-space: normal; text-align: left; font-size: 12px; }
+.hub-thumbs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 5px; min-height: 84px; }
+.hub-thumb { flex: none; padding: 0; width: 66px; border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.hub-image { width: 66px; height: 66px; border-radius: 5px; border-top: 3px solid; background: var(--lc-surface-2); display: grid; place-items: center; overflow: hidden; color: var(--lc-muted); }
+.hub-image img { width: 100%; height: 100%; object-fit: cover; }
+.hub-fields { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.hub-fields label { min-width: 0; }
+.hub-fields input { width: 120px; }
+.hub-inline { display: flex; gap: 4px; }
+.hub-inline input { width: 62px; text-align: center; }
+.hub-name { display: flex; flex-wrap: wrap; gap: 3px; align-items: flex-start; }
+.hub-token { display: flex; flex-direction: column; align-items: center; max-width: 100%; }
+.hub-token b { background: var(--lc-surface-2); border-radius: 4px; padding: 1px 4px; font: 600 12px ui-monospace, Consolas, monospace; overflow-wrap: anywhere; max-width: 100%; }
+.hub-token small { color: var(--lc-muted); font-size: 9px; }
+.hub-summary { display: flex; flex-direction: column; gap: 4px; font-size: 13px; overflow-wrap: anywhere; }
+.hub-history { max-height: 240px; overflow: auto; }
+.hub-history-item { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 6px 0; border-bottom: 1px solid var(--lc-border); overflow-wrap: anywhere; }
+.hub-history-item b { max-width: 100%; }
+@media (max-width: 860px) { .hub-grid { grid-template-columns: 1fr; } }
 .dialog h3 { margin: 0; }
 .dialog h4 { margin: 8px 0 2px; font-size: 13px; }
 .dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }

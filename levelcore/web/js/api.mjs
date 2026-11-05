@@ -93,6 +93,7 @@ export const api = {
     }),
   exportPack: pack => request('GET', `/api/packs/${enc(pack)}/export`, { raw: true }),
   levelhubOptions: () => request('GET', '/api/levelhub/options'),
+  levelhubCheck: (pack, body, token) => request('POST', `/api/packs/${enc(pack)}/levelhub/check`, { json: body, headers: { 'X-BI-Token': token } }),
   levelhubPreflight: (pack, body) => request('POST', `/api/packs/${enc(pack)}/levelhub/preflight`, { json: body }),
   levelhubExport: (pack, body) => request('POST', `/api/packs/${enc(pack)}/levelhub/export`, { json: body, raw: true }),
   audit: (params = {}) => request('GET', `/api/audit?${new URLSearchParams(params)}`),

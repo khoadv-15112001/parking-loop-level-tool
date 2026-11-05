@@ -511,6 +511,12 @@ trong `rules.mjs`. Thử ở BI dev trước, prod sau; API URL, Firebase và ap
 Trong tool: màn Thứ tự → ⬆ Xuất Level Hub → **Kiểm tra** (chốt snapshot từng revision) → Xuất zip hoặc Đẩy lên BI. Mở bộ
 có sẵn trên BI: ô chọn bộ → mục Level Hub, hoặc ⋯ cuối danh sách → Mở bộ từ BI Level Hub.
 
+Hộp xuất của core có dải kéo chọn, nút nhanh, thống kê độ khó, ảnh cuộn ngang, kiểm tên / gợi ý version và lịch sử đẩy.
+Đổi tham số thì kiểm tra lại; gói giữ đúng revision đã kiểm. Node kèm ảnh capture PNG / JPEG / WebP theo nội dung level,
+không kèm SVG / ảnh sơ đồ; Python hiện chỉ có raw / metadata. Nhãn độ khó lấy từ `levelhub.difficultyLabels` trong
+manifest (tuỳ chọn), metadata từ `describeHub`; ảnh từ bridge capture của game. Ảnh và kết quả kiểm thử core với BI giả:
+[SMOKE-LEVEL-HUB.md](SMOKE-LEVEL-HUB.md).
+
 **Xong khi:** Kiểm tra không lỗi; bộ đẩy lên BI dev hiện trên giao diện Level Hub dev đúng số level, metadata đúng.
 
 ### Bước 12. Bàn giao

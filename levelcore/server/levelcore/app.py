@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -286,6 +287,22 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
         except bihub.BiError as e:
             raise bihub.as_api_error(e, "đọc danh sách bộ (quyền Read Asset Group)", s.bi_app_id)
 
+    @api.post("/packs/{pack}/levelhub/check")
+    async def levelhub_check(pack: str, request: Request):
+        token = _bi_token(request)
+        store.list_levels(pack)
+        req = _lh_request(pack, await _json_body(request))
+        if not levelhub.join_geo(req.geo):
+            raise ApiError(400, "Kiểm tra tên trên BI cần chọn GEO")
+        app_id = bihub.app_for_os(s, req.os_name)
+        name = levelhub.compose_zip_name(levelhub.spec_of(store).acronym, levelhub.OS_CODES[req.os_name],
+                                        req.from_lv, req.to_lv, req.geo, req.why, req.designer,
+                                        datetime.now(levelhub.VN_TZ).date(), req.version, req.date)[:-4]
+        try:
+            return await run_in_threadpool(bihub.check_name, s, token, name, app_id)
+        except bihub.BiError as e:
+            raise bihub.as_api_error(e, "kiểm tra tên (parse-name, quyền Read Asset Group)", app_id)
+
     @api.get("/bi/groups/{group_id}")
     async def bi_group(group_id: str, request: Request):
         token = _bi_token(request)
@@ -365,7 +382,8 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
             recovered = True
         with db.write() as c:
             store._audit(c, user, "levelhub.bi_upload", pack=pack, zip=bi_name, env=s.bi_env, app=app_id,
-                         group=(group or {}).get("id"), levels=summary["levelCount"], missing=summary["missingTotal"],
+                         group=(group or {}).get("id") or (group or {}).get("_id") or (group or {}).get("groupId"),
+                         levels=summary["levelCount"], missing=summary["missingTotal"],
                          manifest=summary["manifest"], newer=summary["newer"], recovered=recovered)
         return {"name": bi_name, "group": group, "levelCount": summary["levelCount"], "newer": summary["newer"],
                 "recovered": recovered, "checked_at": store_iso(time.time())}

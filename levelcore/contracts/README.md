@@ -94,6 +94,20 @@ cục của core. Module của core vẫn mở ở `/core/` để import: `/core
 
 ## Xuất Level Hub theo snapshot
 
+Hộp dùng chung ở `web/js/levelhub.mjs` (`openLevelHub`), tiện ích thuần ở `web/js/levelhub_model.mjs`. Giao diện theo
+Sand Jam, có trên cả Node và Python; game dùng manifest `levelhub.difficultyLabels` để đổi nhãn độ khó nếu cần.
+
+- `preflight`, `export`, `upload` nhận thêm `date` (ddMM, không gửi thì lấy ngày Việt Nam), `previews` (boolean, mặc
+  định false để giữ gói cũ). `preflight.rows` thêm `name`, `sha`, `preview` (đuôi ảnh hoặc null); báo cáo thêm `warnings`,
+  `previewCount`, `previewsSupported`. Node kèm ảnh capture raster từ kho ảnh vào `Previews/<n>.png|jpg|webp`; Python
+  trả `previewsSupported: false` và giữ gói raw / metadata. SVG và ảnh nguồn render không tính là ảnh game.
+- `POST /api/packs/{pack}/levelhub/check` nhận cùng tham số xuất và `X-BI-Token`, trả `{name, available, suggestion}`.
+  Chỉ lỗi BI 409 được hiểu là trùng tên; 401/403 và lỗi khác giữ `bi_status`. Gợi ý thử tối đa 20 version tiếp theo.
+- Dải tối đa 20000 số; số đầu / cuối và số trong snapshot phải là số nguyên an toàn. Snapshot trùng tên / số bị 400,
+  snapshot chứa level đã xoá bị 409. Cảnh báo trùng nội dung / đang sửa / bản cũ không chặn xuất; lỗi validator vẫn chặn.
+- Lịch sử trong hộp dùng `GET /api/audit?pack=...&action=levelhub.bi_upload`; chi tiết có group ID (cả BI trả `_id`).
+  Theo dõi trạng thái ngừng khi đóng hộp; token BI chỉ ở bộ nhớ, token bị BI từ chối 401 được bỏ để đăng nhập lại.
+
 `preflight` trả thêm `snapshot: [{level, name, rev, sha}]`. Gửi lại đúng `snapshot` đó trong body của `export` / `upload`
 thì gói dùng đúng các revision đã kiểm tra, dù có người sửa level sau đó (`newer` trong kết quả upload liệt kê level
 đã có bản mới hơn). Revision không còn hoặc sha khác: 409. Không gửi `snapshot` thì dùng head như trước.

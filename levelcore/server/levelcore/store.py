@@ -391,7 +391,7 @@ class Store:
         for it in items:
             lv = self._level(c, pack, it["name"])
             r = lv and c.execute("SELECT * FROM revisions WHERE level_id=? AND rev=?", (lv["id"], it["rev"])).fetchone()
-            if not r or r["blob_sha"] is None or r["blob_sha"] != it["sha"]:
+            if not lv or lv["deleted"] or not r or r["blob_sha"] is None or r["blob_sha"] != it["sha"]:
                 raise ApiError(409, f"Level {it['name']} r{it['rev']} không khớp bản đã kiểm tra — bấm Kiểm tra lại")
             out.append({"name": it["name"], "level_no": it["level"], "rev": it["rev"], "sha": r["blob_sha"],
                         "author": r["author"], "updated_at": iso(r["created_at"]), "head_rev": lv["head_rev"],

@@ -53,7 +53,12 @@ export function startFakeBi() {
       }
       if (p === '/__last') return json(res, 200, last);
       if (!req.headers.authorization) return json(res, 401, { message: 'Unauthorized' });
-      if (p === '/level-hub/parse-name' && req.method === 'POST') return ok(res, { valid: true });
+      if (p === '/level-hub/parse-name' && req.method === 'POST') {
+        const { name, appId } = JSON.parse(body.toString('utf8'));
+        if (mode.startsWith('names') && groups.some(g => g.name === name && g.appId === appId)) return json(res, 409, { message: 'Name already exists' });
+        if (mode.startsWith('denied')) return json(res, 403, { message: 'Read denied' });
+        return ok(res, { valid: true });
+      }
       if (p === '/level-hub/asset-groups' && req.method === 'POST') {
         const code = /^c(\d{3})/.exec(mode)?.[1];
         if (code) return json(res, Number(code), { message: `lỗi giả ${code}` });

@@ -5,7 +5,8 @@ Sand Jam Level Tool là tool level đầy đủ nhất đang chạy: https://san
 Tài liệu này liệt kê tính năng theo từng màn, kèm ảnh có đánh số, để dev làm tool cho game khác biết một tool hoàn chỉnh có
 gì và core đã có tới đâu.
 
-Ảnh chụp bản chạy local với dữ liệu thử (2811 level, 3 bộ), không phải số liệu production. Repo Sand Jam có cùng tài liệu
+Ảnh có đánh số chụp bản chạy local với dữ liệu thử (2811 level, 3 bộ), không phải số liệu production. Ảnh tổng thể Level
+Hub là ảnh Sand Jam do người dùng cung cấp ngày 05/11/2026, không phải giao diện core. Repo Sand Jam có cùng tài liệu
 ở [`docs/TINH-NANG.md`](https://github.com/SonatGameProduct/sand-jam-level-tool/blob/main/docs/TINH-NANG.md); sửa thì sửa cả hai.
 
 **Cột Core** so với core ngày 04/11/2026 ([Có gì trong core](../README.md#có-gì-trong-core)):
@@ -167,20 +168,67 @@ Mỗi bộ là một thứ tự level cho một nền tảng × segment. Nhiều
 
 ### Đẩy lên BI Level Hub
 
-![Hộp Level Hub](images/sandjam/06-level-hub.webp)
+Mở từ **Bộ xếp level ▸ ⇧ Level Hub**. Ảnh tham chiếu đầy đủ, giữ nguyên giao diện Sand Jam, gồm tuỳ chọn kèm ảnh và thanh
+nút dưới cùng:
+
+![Hộp đẩy bộ level lên BI Level Hub của Sand Jam: chọn level và thông tin group bên trái, tên và tóm tắt bên phải](images/sandjam/06-level-hub-overview.png)
+
+Trong ảnh: chọn 250 level, 235 level có ảnh, 0 lỗi; một cảnh báo trùng nội dung vẫn cho phép đẩy. Đây là trạng thái trong
+ảnh tham chiếu, không phải kết quả vừa đẩy lên BI.
+
+**Core đã có hộp đẩy trực quan theo bố cục Sand Jam**, cập nhật ngày 05/11/2026: chọn dải bằng số / nút nhanh / kéo,
+thống kê độ khó, ảnh xem trước, thông tin group, kiểm tên và gợi ý version, tóm tắt và lịch sử đẩy. Nút **Kiểm tra** chốt
+revision trước khi xuất hoặc đẩy; đổi tham số thì phải kiểm tra lại. Phần kèm ảnh game hiện chỉ có trên server Node.
+
+Ảnh core thực tế dưới đây chụp vỏ dùng chung với game mẫu: 250 level, 236 ảnh PNG minh hoạ, BI giả chạy local; không
+phải level Sand Jam hay kết quả đẩy lên BI thật. Giao diện sáng / tối và cửa sổ hẹp đã được kiểm tra.
+
+![Hộp Level Hub dùng chung của core: dải chọn, thống kê, ảnh, form và lịch sử trong bố cục hai cột](images/levelhub-core.jpg)
+
+[Ảnh core khi cửa sổ hẹp, bố cục một cột](images/levelhub-core-narrow.jpg).
+
+<details>
+<summary>Ảnh demo có đánh số để tra bảng tính năng</summary>
+
+![Hộp Level Hub của Sand Jam có đánh số các vùng 1–10, bản demo local](images/sandjam/06-level-hub.webp)
+
+</details>
 
 | # | Tính năng | Core |
 | --- | --- | --- |
-| 1 | Chọn dải slot: nhập số, hoặc Cả bộ / 1-50 / 1-100 / 1-200 / từng đoạn. | ✅ · đoạn ➕ |
-| 2 | Dải độ khó cả bộ: kéo để chọn slot, Shift + bấm để nối. | ➕ |
-| 3 | Số level theo độ khó, số có ảnh, số lỗi. | ✅ |
-| 4 | Điểm cần xem lại (vẫn đẩy được), ví dụ level trùng nội dung; bấm để mở slot. | ✅ |
-| 5 | Ảnh từng level sẽ gửi. | ✅ |
-| 6 | Thông tin group: nền tảng, designer, team, ngày, version, GEO (chọn nhiều), Why, mô tả. | ✅ |
-| 7 | Tên group 9 phần `Game_OS_From_To_GEO_Why_Designer_ddMM_Ver`, kiểm tên trên BI và gợi ý version kế tiếp. | ✅ |
-| 8 | Tóm tắt sẽ gửi; báo khi server chưa cấu hình BI (vẫn tải ZIP được). | ✅ |
-| 9 | Các lần đẩy của bộ này. | ✅ |
-| 10 | ⇩ Tải ZIP chuẩn Level Hub (`LevelMetadata.json`, `Raw/`, `Previews/`), ⇧ Đẩy lên BI bằng tài khoản BI của người bấm. | ✅ |
+| 1 | Chọn dải slot: nhập số, hoặc Cả bộ / 1-50 / 1-100 / 1-200 / từng đoạn. | ✅ nhập dải số level và nút nhanh · chọn theo đoạn ➕ |
+| 2 | Dải độ khó cả bộ: kéo để chọn slot, Shift + bấm để nới. | ✅ màu theo độ khó, cột cao theo thời gian từ hook game |
+| 3 | Chip số level theo độ khó, số có ảnh, số lỗi, cập nhật theo dải đang chọn. | ✅ · số ảnh trên Node, thêm số level thiếu trong dải |
+| 4 | Tách lỗi chặn đóng gói khỏi điểm cần xem lại; bấm mở level tương ứng. | ✅ validator, trùng nội dung, đang sửa, bản cũ đã kiểm tra · ghim revision từng slot production ➕ |
+| 5 | Dải ảnh từng level sẽ gửi, cuộn ngang, nhãn số; tuỳ chọn Kèm ảnh game. | ✅ Node: ảnh capture raster đúng nội dung; không kèm ảnh sơ đồ / SVG |
+| 6 | Nền tảng, designer, team, ngày / Hôm nay, version −/+, GEO chọn nhiều, Why, mô tả. | ✅ · Why và GEO có ô tuỳ nhập |
+| 7 | Tên group 9 phần `Game_OS_From_To_GEO_Why_Designer_ddMM_Ver`, tô phần sai, kiểm tên trên BI và gợi ý version. | ✅ · core giữ định dạng version `v01`, tương thích API cũ `v1` |
+| 8 | Cột Sẽ gửi: bộ, dải số, số level / ảnh, nền tảng, môi trường BI, revision đã kiểm tra, đăng nhập BI. | ✅ · chưa cấu hình BI vẫn tải ZIP được |
+| 9 | Các lần đẩy của bộ này: tên group, số level, người đẩy, thời gian, môi trường, xem trạng thái. | ✅ · core bấm Xem trạng thái trên BI, rồi tự theo dõi khi PROCESSING |
+| 10 | ⇩ Tải ZIP chuẩn Level Hub, ⇧ Đẩy lên BI bằng tài khoản BI của người bấm. | ✅ `LevelMetadata.json` + `Raw/<n>.json`; Node kèm `Previews/<n>.png|jpg|webp` |
+
+**Bố cục và tương tác đã có trong hộp dùng chung của core:**
+
+- Dùng một hộp thoại, không thêm màn hay tab. Bên trái đi theo hai bước **Chọn level → Thông tin group**; bên phải là
+  **Tên group → Sẽ gửi → Các lần đẩy của bộ này**. Tên bộ dài được rút gọn để không đẩy lệch các nút.
+- Sand Jam và core dùng hộp rộng tối đa 1060 px, không quá 96% chiều ngang cửa sổ; cột phải 300 px. Từ 860 px trở xuống
+  chuyển thành một cột. Nội dung cuộn trong hộp; thanh **Đóng / ⇩ Tải ZIP / ⇧ Đẩy lên BI** luôn ở đáy hộp.
+- Chọn dải bằng số, nút nhanh hoặc kéo đều cập nhật đồng thời dải màu, chip thống kê, cảnh báo, ảnh và tóm tắt gửi.
+  Màu có chú giải Normal / Hard / VeryHard / lỗi, kèm chữ và số để đọc được cả khi không phân biệt màu.
+- Ảnh xem trước cuộn ngang, tải khi cần, tối đa 300 ảnh rồi hiện số còn lại; thiếu ảnh có ô trống và số đếm rõ ràng.
+  Bỏ **Kèm ảnh game** phải đổi số ảnh trong tóm tắt; thiếu ảnh không bị coi là lỗi level.
+- Lỗi và cảnh báo có mức độ riêng; lỗi level chặn đẩy, cảnh báo vẫn cho đẩy. Tên group tách từng phần có nhãn; hiện rõ
+  môi trường và tài khoản BI. Chưa cấu hình BI vẫn tải ZIP được; khi đang gửi khoá nút để tránh bấm lặp.
+
+Khi làm cho game khác, dùng hộp core thay vì chép giao diện Sand Jam. Tên game, nhãn / chỉ số độ khó, mã obstacle và ảnh
+lấy từ manifest, hook hoặc bridge của game. Core giữ **Kiểm tra → chốt revision → Xuất / Đẩy đúng bản đã kiểm tra**;
+không tự lấy bản mới nhất khi người khác vừa sửa sau đó. Dải tối đa 20000 số, snapshot trùng hoặc chứa level đã xoá bị
+chặn. Các bước chọn theo đoạn và ghim revision từng slot production vẫn là phần riêng của Sand Jam.
+
+Nguồn đối chiếu: Sand Jam `app/js/views/levelhub.mjs`, `app/css/app.css` (nhóm `.hub-*`); core
+`levelcore/web/js/levelhub.mjs` (hộp dùng chung), `levelcore/web/js/levelhub_model.mjs` (tiện ích thuần),
+`levelcore/web/js/levelhub_bi.mjs`,
+`levelcore/node/levelhub.mjs` và `levelcore/server/levelcore/levelhub.py` (nội dung gói ZIP).
 
 ## 4. Sửa level
 

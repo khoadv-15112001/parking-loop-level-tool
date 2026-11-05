@@ -30,18 +30,19 @@ export function shortUser(email) {
  * onOpen(dlg, close): close(v) đóng hộp với giá trị v (vd bấm một dòng trong bảng). wide: hộp rộng (bảng, biểu đồ).
  * Trả Promise resolve giá trị trả về của action (hoặc null khi đóng).
  */
-export function openDialog({ title, html = '', actions = [{ label: 'Đóng' }], onOpen, wide = false }) {
+export function openDialog({ title, html = '', actions = [{ label: 'Đóng' }], onOpen, onClose, canClose = () => true, wide = false }) {
   return new Promise(resolve => {
     const back = document.createElement('div');
     back.className = 'dialog-backdrop';
     back.innerHTML = `<div class="dialog${wide ? ' wide' : ''}" role="dialog" aria-modal="true"><h3>${esc(title)}</h3>
       <div class="dlg-body">${html}</div><div class="actions"></div></div>`;
     const dlg = back.firstElementChild;
-    const close = v => { back.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const close = v => { if (!canClose()) return; back.remove(); document.removeEventListener('keydown', onKey); onClose?.(); resolve(v); };
     const onKey = e => { if (e.key === 'Escape') close(null); };
     for (const a of actions) {
       const b = document.createElement('button');
       b.textContent = a.label;
+      b.disabled = a.disabled?.() ?? false;
       if (a.primary) b.className = 'primary';
       if (a.danger) b.className = 'danger';
       b.addEventListener('click', async () => {
@@ -53,7 +54,7 @@ export function openDialog({ title, html = '', actions = [{ label: 'Đóng' }], 
         } catch (e) {
           toast(e.message || String(e), 'err');
         } finally {
-          b.disabled = false;
+          b.disabled = a.disabled?.() ?? false;
         }
       });
       $('.actions', dlg).appendChild(b);

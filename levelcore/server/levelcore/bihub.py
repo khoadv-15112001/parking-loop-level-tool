@@ -144,6 +144,29 @@ def _checked_id(value: str, label: str) -> str:
     return value
 
 
+def check_name(s, token, name, app_id):
+    try:
+        parse_name(s, token, name, app_id)
+        return {"name": name, "available": True, "suggestion": None}
+    except BiError as e:
+        if e.bi_status != 409:
+            raise
+    parts = name.split("_")
+    version = parts.pop()
+    n = int(version[1:]) if version[1:].isdigit() else 1
+    if n > 9007199254740971:
+        return {"name": name, "available": False, "suggestion": None}
+    for i in range(1, 21):
+        next_version = "v" + str(n + i).zfill(len(version) - 1)
+        try:
+            parse_name(s, token, "_".join(parts + [next_version]), app_id)
+            return {"name": name, "available": False, "suggestion": next_version}
+        except BiError as e:
+            if e.bi_status != 409:
+                raise
+    return {"name": name, "available": False, "suggestion": None}
+
+
 def get_group(s, token: str, group_id: str) -> Dict[str, Any]:
     return call(s, "GET", f"/asset-groups/{_checked_id(group_id, 'nhóm')}", token)
 

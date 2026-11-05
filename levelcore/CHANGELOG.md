@@ -16,18 +16,20 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Game mới: `new_game.mjs` chỉ sinh manifest, luật JS, test; core dựng giao diện, game muốn riêng thì khai `app`.
 - Server Node đủ route như server Python; bản game từ Jenkins: nhánh theo dõi lên ngay, nhánh khác chờ admin chọn.
 - Chơi thử: link + QR cho điện thoại, ▶ Chơi rN trong Lịch sử, mọi lượt chơi được lưu (xuất JSONL cho phân tích, AI).
-- Màn Thư viện (lưới ảnh, lọc, chọn nhiều), Thứ tự (kéo thả, ghim, hoàn tác), Tổng quan bộ, Hoạt động; tìm nhanh Ctrl+K.
+- Màn Thư viện, Thứ tự, Tổng quan bộ, Hoạt động; Level Hub có chọn dải trực quan, ảnh game và lịch sử đẩy.
 - Quản trị Node: sao lưu nén, tối đa 7 bản / 200 MB; thùng rác, quyền, phím tắt và bố cục tự chỉnh.
 
 ### Thay đổi
 - Tìm level theo số, dải `10-20`, danh sách `2,5,9` và chữ không dấu; form thuộc tính từ `fields` của game.
 - Lưu và nhập: xung đột có so sánh và "Lưu thành bản sao"; Nhập xem trước từng level trước khi ghi.
 - Giao diện mặc định như Sand Jam / AntLevel: thanh màn, hàng của bộ, thanh trạng thái, gợi ý phím; Lưu chỉ hiện khi sửa.
-- Đẩy lên BI: lỗi 409 và 413 có gợi ý; BI không trả lời sau khi tạo bộ thì tool tự tìm lại bộ vừa tạo.
+- Đẩy lên BI: kiểm tên trùng, gợi ý version; lỗi 409/413 có gợi ý, mất phản hồi thì tìm lại bộ vừa tạo.
 - Bản game: giữ 1 bản quay lại và 1 bản chờ trong 800 MB; kiểm tra chỗ trống dưới mốc 1,5 GB trước khi nhận.
 
 ### Sửa lỗi
 - Server Python: không còn giữ kết nối SQLite của luồng đã kết thúc khiến RAM tăng dần.
+- Level Hub: chặn snapshot trùng, level đã xoá và dải quá lớn; ảnh game kèm đúng nội dung level trên Node.
+- Tài liệu Level Hub: ảnh đầy đủ của Sand Jam, phân biệt tiện ích đã có trong core và phần giao diện chưa có.
 
 ### Cho Dev
 - Route mới (chỉ server Node): `/api/plays*`, `/api/links*`, `/p/<token>*`, `/api/thumbs/*`, `/reorder`, `/api/admin/*`.

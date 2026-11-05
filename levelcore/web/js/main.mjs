@@ -5,8 +5,9 @@
 import { api, ApiError, devUser, downloadBlob, downloadResponse, session, setStoragePrefix } from './api.mjs';
 import { biSessionLogin } from './biauth.mjs';
 import {
-  groupId, groupName, hubIdOf, hubOptionText, listHubGroups, openLevelHubBrowser, syncHubPack, uploadToBi,
+  groupId, groupName, hubIdOf, hubOptionText, listHubGroups, openLevelHubBrowser, syncHubPack,
 } from './levelhub_bi.mjs';
+import { openLevelHub } from './levelhub.mjs';
 import { diffPaths, renderFields } from './fields.mjs';
 import { parseLevelQuery, queryMatches } from './query.mjs';
 import { $, $$, confirmDialog, esc, fmtTime, openDialog, shortUser, toast } from './ui.mjs';
@@ -1127,80 +1128,11 @@ async function importFile(file) {
 }
 
 async function levelHub() {
-  const opt = await api.levelhubOptions();
-  const nums = state.levels.map(l => l.level);
-  const from = nums.length ? Math.min(...nums) : 1, to = nums.length ? Math.max(...nums) : 1;
-  const sel = (id, list, def) => `<select id="${id}">${list.map(x => `<option ${x === def ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
-  const html = `<p class="muted small">Gói zip LevelMetadata.json + Raw/&lt;n&gt;.json cho LevelBuild / BI (game ${esc(opt.game)}).</p>
-    <div class="grid2"><label>Từ level<input id="lh-from" type="number" min="1" value="${from}"></label>
-    <label>Đến level<input id="lh-to" type="number" min="1" value="${to}"></label>
-    <label>OS${sel('lh-os', opt.os, packInfo()?.platform === 'ios' ? 'iOS' : 'Android')}</label>
-    <label>Team${sel('lh-team', opt.teams, 'GD')}</label>
-    <label>Why${sel('lh-why', ['', ...opt.why], '')}</label>
-    <label>Geo${sel('lh-geo', ['', ...opt.geo], '')}</label>
-    <label>Designer<input id="lh-designer" value="${esc(state.me.email)}"></label>
-    <label>Version<input id="lh-ver" value="v1"></label></div>
-    <label class="check"><input id="lh-missing" type="checkbox"> Cho phép thiếu level trong dải</label>
-    ${state.bi?.configured ? `<label>Mô tả khi đẩy lên BI (bỏ trống, hoặc ≥ 100 ký tự)<textarea id="lh-desc"></textarea></label>
-      <p class="muted small">Đẩy lên BI (${esc(state.bi.env)}) bắt buộc chọn Geo. Tên bộ trên BI dùng mã OS A / I.</p>` : ''}
-    <div id="lh-report" class="small"></div>`;
-  const body = dlg => ({
-    from_lv: Number($('#lh-from', dlg).value), to_lv: Number($('#lh-to', dlg).value), os: $('#lh-os', dlg).value,
-    team: $('#lh-team', dlg).value, why: $('#lh-why', dlg).value, geo: $('#lh-geo', dlg).value ? [$('#lh-geo', dlg).value] : [],
-    designer: $('#lh-designer', dlg).value, version: $('#lh-ver', dlg).value, allow_missing: $('#lh-missing', dlg).checked,
-  });
-  // Kiểm tra chốt snapshot (revision từng level); Xuất / Đẩy với cùng tham số dùng đúng các bản đó dù có người sửa sau.
-  let checked = null;
-  const withSnapshot = dlg => {
-    const b = body(dlg);
-    if (checked && checked.key === JSON.stringify(b)) b.snapshot = checked.snapshot;
-    return b;
-  };
-  const report = (dlg, r) => {
-    if (r.snapshot) checked = { key: JSON.stringify(body(dlg)), snapshot: r.snapshot, at: new Date() };
-    $('#lh-report', dlg).innerHTML = `${r.snapshot ? `<p class="muted">Đã chốt ${esc(r.snapshot.length)} level lúc ${esc(checked.at.toLocaleTimeString('vi-VN'))}: Xuất / Đẩy dùng đúng các bản này (đổi tham số thì kiểm tra lại).</p>` : ''}`
-      + `<p><b>${esc(r.zipName)}</b> · ${esc(r.levelCount)} level`
-      + `${r.missingTotal ? ` · <span class="warn">thiếu ${esc(r.missingTotal)}: ${esc(r.missing.slice(0, 30).join(', '))}</span>` : ''}</p>`
-      + (r.errors.length ? `<p class="err">${r.errors.map(e => `Level ${esc(e.level)}: ${esc(e.errors[0])}`).join('<br>')}</p>` : '')
-      + `<table><tr><th>Lv</th><th>Mech</th><th>Diff</th><th>Time</th><th>Props</th><th>Obstacle</th></tr>${r.rows.slice(0, 200).map(x =>
-        `<tr><td>${esc(x.level)}</td><td>${esc(x.mechanics)}</td><td>${esc(x.difficulty)}</td><td>${esc(x.time)}</td><td>${esc(x.uniqueColor)}</td><td>${esc(x.obstacleInfos)}</td></tr>`).join('')}</table>`;
-  };
-  const biAction = state.bi?.configured ? [{
-    label: `⬆ Đẩy lên BI (${state.bi.env})`, onClick: async dlg => {
-      try {
-        await uploadToBi(state.pack, { ...withSnapshot(dlg), description: $('#lh-desc', dlg).value.trim() }, $('#lh-report', dlg));
-      } catch (e) {
-        if (e.status === 422 && e.body.report) report(dlg, e.body.report);
-        $('#lh-report', dlg).insertAdjacentHTML('afterbegin', `<p class="err">${esc(e.message)}</p>`);
-        toast(e.message, 'err');
-      }
-      return false;
-    },
-  }] : [];
-  await openDialog({
-    title: `Xuất Level Hub — bộ ${state.pack}`, html, actions: [
-      { label: 'Đóng', value: null },
-      { label: 'Kiểm tra', onClick: async dlg => { report(dlg, await api.levelhubPreflight(state.pack, body(dlg))); return false; } },
-      ...biAction,
-      {
-        label: 'Xuất zip', primary: true, onClick: async dlg => {
-          try {
-            await downloadResponse(await api.levelhubExport(state.pack, withSnapshot(dlg)), 'levelhub.zip');
-            toast('Đã xuất gói Level Hub', 'ok');
-          } catch (e) {
-            if (e.status === 422 && e.body.report) {
-              report(dlg, e.body.report);
-              toast(e.message, 'err');
-              return false;
-            }
-            throw e;
-          }
-        },
-      },
-    ],
+  return openLevelHub({ pack: state.pack, levels: state.levels, packInfo: packInfo(), email: state.me.email,
+    bi: state.bi, game, canUpload: state.me?.rights?.levelhubUpload ?? true,
+    onOpenLevel: name => shell.openLevel(name),
   });
 }
-
 function showBiSetup() {
   openDialog({
     title: 'Chưa kết nối BI Level Hub',

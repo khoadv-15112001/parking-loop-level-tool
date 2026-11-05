@@ -122,3 +122,82 @@ test('Đăng nhập Google của BI: token Firebase hợp lệ thành phiên c�
   assert.equal(foreign.status, 403);
   assert.equal((await call(null, 'GET', '/api/me')).status, 401);
 });
+
+test('Level Hub: ngày tuỳ chọn, báo cáo trực quan, snapshot trùng / level đã xoá bị chặn', async () => {
+  const pack = await packOf3();
+  const body = range(1, 3, { date: '0511', why: 'update', version: 'v01', previews: true });
+  const pre = await A.post(`/api/packs/${pack}/levelhub/preflight`, { json: body });
+  assert.equal(pre.status, 200, JSON.stringify(pre.data));
+  assert.match(pre.data.zipName, /_0511_v01\.zip$/);
+  assert.ok(pre.data.rows.every(x => x.name && x.sha && Object.hasOwn(x, 'preview')));
+  assert.ok(Array.isArray(pre.data.warnings));
+  const snap = pre.data.snapshot;
+  for (const patch of [{ snapshot: [snap[0], snap[0]] }, { snapshot: [snap[0], { ...snap[1], level: 1 }] },
+    { date: '3213' }, { date: null }, { to_lv: 20001 }, { from_lv: 1e16, to_lv: 1e16 }, { previews: 'yes' }, { previews: null }]) {
+    assert.equal((await A.post(`/api/packs/${pack}/levelhub/export`, { json: { ...body, ...patch } })).status, 400);
+  }
+  assert.equal((await A.del(`/api/packs/${pack}/levels/2`, { headers: ifMatch(1) })).status, 200);
+  assert.equal((await A.post(`/api/packs/${pack}/levelhub/export`, { json: { ...body, snapshot: snap } })).status, 409);
+});
+
+test('Level Hub: cảnh báo trùng nội dung, đang sửa và bản mới hơn không chặn xuất', async () => {
+  const pack = await newPack('hubwarnings');
+  const raw = level(1, 60);
+  await create(pack, 1, raw);
+  await create(pack, 2, raw);
+  await A.post(`/api/locks/packs/${pack}/levels/1`);
+  const b = range(1, 2);
+  const pre = await A.post(`/api/packs/${pack}/levelhub/preflight`, { json: b });
+  assert.ok(pre.data.warnings.some(x => /Giống hệt/.test(x.text)));
+  assert.ok(pre.data.warnings.some(x => /chưa lưu/.test(x.text)));
+  await A.put(`/api/packs/${pack}/levels/1`, { json: level(1, 77), headers: ifMatch(1) });
+  const checked = await A.post(`/api/packs/${pack}/levelhub/preflight`, { json: { ...b, snapshot: pre.data.snapshot } });
+  assert.ok(checked.data.warnings.some(x => /bản mới nhất/.test(x.text)));
+  assert.equal((await A.post(`/api/packs/${pack}/levelhub/export`, { json: { ...b, snapshot: pre.data.snapshot } })).status, 200);
+});
+
+test('Level Hub: kiểm tên trùng gợi ý version, giữ lỗi quyền BI và ghi lịch sử theo bộ', async () => {
+  const pack = await packOf3();
+  const body = range(1, 3, { date: '0105', why: 'update', version: 'v41' });
+  const check = mode => A.post(`/api/packs/${pack}/levelhub/check`, { json: body, headers: { 'X-BI-Token': biToken(mode) } });
+  const before = await check('namesnames');
+  assert.equal(before.status, 200, JSON.stringify(before.data));
+  assert.equal(before.data.available, true);
+  const pushed = await upload(pack, body, 'namesnames');
+  assert.equal(pushed.status, 200, JSON.stringify(pushed.data));
+  const after = await check('namesnames');
+  assert.equal(after.data.available, false);
+  assert.equal(after.data.suggestion, 'v42');
+  assert.equal(after.data.name, pushed.data.name);
+  const denied = await check('deniedread');
+  assert.equal(denied.status, 502);
+  assert.equal(denied.data.bi_status, 403);
+  const audit = await A.get(`/api/audit?pack=${pack}&action=levelhub.bi_upload`);
+  assert.equal(audit.data[0].detail.group, pushed.data.group.id);
+});
+
+test('Level Hub Node: chỉ kèm ảnh game đúng sha, bỏ SVG / ảnh sơ đồ và tôn trọng tuỳ chọn ảnh', async t => {
+  const me = await A.get('/api/me');
+  if (!me.data.features?.thumbs) return t.skip('Ảnh game chỉ có trên Node');
+  const pack = await packOf3();
+  const body = range(1, 3, { previews: true });
+  const pre = await A.post(`/api/packs/${pack}/levelhub/preflight`, { json: body });
+  const [a, b] = pre.data.snapshot;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5XQAAAAASUVORK5CYII=', 'base64');
+  assert.equal((await A.put(`/api/thumbs/${a.sha}?source=capture`, { body: png, headers: { 'Content-Type': 'image/png' } })).status, 200);
+  await A.put(`/api/thumbs/${b.sha}?source=render`, { body: '<svg/>', headers: { 'Content-Type': 'image/svg+xml' } });
+  const available = await A.post(`/api/packs/${pack}/levelhub/preflight`, { json: body });
+  assert.equal(available.data.previewCount, 1);
+  assert.equal(available.data.rows[0].preview, 'png');
+  const exported = await A.post(`/api/packs/${pack}/levelhub/export`, { json: { ...body, snapshot: pre.data.snapshot } });
+  const entries = readZip(exported.bytes);
+  assert.deepEqual(entries.filter(x => x.name.startsWith('Previews/')).map(x => x.name), ['Previews/1.png']);
+  assert.deepEqual(entries.find(x => x.name === 'Previews/1.png').data, png);
+  const without = await A.post(`/api/packs/${pack}/levelhub/export`, { json: { ...body, previews: false } });
+  assert.equal(readZip(without.bytes).filter(x => x.name.startsWith('Previews/')).length, 0);
+  await A.put(`/api/packs/${pack}/levels/1`, { json: level(1, 99), headers: ifMatch(1) });
+  const latest = await A.post(`/api/packs/${pack}/levelhub/preflight`, { json: body });
+  assert.equal(latest.data.previewCount, 0);
+  const old = await A.post(`/api/packs/${pack}/levelhub/export`, { json: { ...body, snapshot: pre.data.snapshot } });
+  assert.ok(readZip(old.bytes).some(x => x.name === 'Previews/1.png'));
+});

@@ -39,9 +39,9 @@ function vnParts(ms) {
   return { dd: p(d.getUTCDate()), mm: p(d.getUTCMonth() + 1), yy: p(d.getUTCFullYear() % 100) };
 }
 
-export function composeZipName(acronym, os, fromLv, toLv, geo, why, designer, nowMs, version) {
+export function composeZipName(acronym, os, fromLv, toLv, geo, why, designer, nowMs, version, date = '') {
   const { dd, mm } = vnParts(nowMs);
-  return `${[sanitize(acronym), os, String(fromLv), String(toLv), joinGeo(geo), sanitize(why), sanitize(String(designer || '').split('@')[0]), `${dd}${mm}`, normalizeVersion(version)].join('_')}.zip`;
+  return `${[sanitize(acronym), os, String(fromLv), String(toLv), joinGeo(geo), sanitize(why), sanitize(String(designer || '').split('@')[0]), date || `${dd}${mm}`, normalizeVersion(version)].join('_')}.zip`;
 }
 
 function rowDate(updatedAt) {
@@ -55,11 +55,16 @@ export function parseRequest(pack, body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'Body phải là JSON object');
   const num = k => {
     const v = body[k];
-    if (!Number.isInteger(v) || v < 1) throw new ApiError(400, `${k} phải là số nguyên ≥ 1`);
+    if (!Number.isSafeInteger(v) || v < 1) throw new ApiError(400, `${k} phải là số nguyên ≥ 1`);
     return v;
   };
   const req = { pack, fromLv: num('from_lv'), toLv: num('to_lv'), os: body.os ?? 'Android', team: body.team ?? 'GD', designer: '', why: '', version: 'v1', geo: [], allowMissing: body.allow_missing === true, snapshot: null };
   if (req.fromLv > req.toLv) throw new ApiError(400, 'from_lv phải ≤ to_lv');
+  if (req.toLv - req.fromLv >= MAX_SNAPSHOT) throw new ApiError(400, 'Mỗi gói tối đa 20000 level');
+  req.date = body.date === undefined ? '' : body.date;
+  if (typeof req.date !== 'string' || (req.date && !/^(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])$/.test(req.date))) throw new ApiError(400, 'Ngày phải dạng ddMM');
+  if (Object.hasOwn(body, 'previews') && typeof body.previews !== 'boolean') throw new ApiError(400, 'previews phải là boolean');
+  req.previews = body.previews === true;
   if (!OS_CODES[req.os]) throw new ApiError(400, 'os phải là Android | iOS');
   if (!TEAMS.includes(req.team)) throw new ApiError(400, `team phải là ${TEAMS.join(' | ')}`);
   for (const k of ['designer', 'why', 'version']) {
@@ -77,6 +82,8 @@ export function parseRequest(pack, body) {
       throw new ApiError(400, 'snapshot phải là mảng {level, name, rev, sha} lấy từ bước Kiểm tra');
     }
     req.snapshot = snap;
+    if (new Set(snap.map(x => x.name)).size !== snap.length || new Set(snap.map(x => x.level)).size !== snap.length
+      || snap.some(x => !Number.isSafeInteger(x.level) || !Number.isSafeInteger(x.rev) || x.level < 1 || x.rev < 1)) throw new ApiError(400, 'snapshot có level trùng hoặc không hợp lệ — bấm Kiểm tra lại');
   }
   return req;
 }
@@ -90,14 +97,29 @@ export function preflight(store, req, nowMs = Date.now()) {
   for (let n = req.fromLv; n <= req.toLv; n++) if (!have.has(n)) missing.push(n);
   const spec = specOf(store.game);
   const checks = store.validate(inRange.map(lv => [lv.name, lv.level]));
+  const listed = new Map(store.listLevels(req.pack).map(lv => [lv.name, lv]));
+  const warnings = [], bySha = new Map();
+  const images = new Map(store.db.all(`SELECT DISTINCT t.sha,t.type FROM thumbs t
+    JOIN revisions r ON r.blob_sha=t.sha JOIN levels l ON l.id=r.level_id
+    WHERE l.pack=? AND t.source='capture' AND t.type IN ('image/png','image/jpeg','image/webp')`, req.pack).map(x => [x.sha, x.type]));
+  const extensions = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
   const errors = inRange.map((lv, i) => [lv, checks[i]]).filter(([, v]) => !v.isValid).map(([lv, v]) => ({ level: lv.level_no, errors: v.errors.slice(0, 10) }));
-  const rows = inRange.map(lv => {
+  const rows = inRange.map((lv, i) => {
     const auto = describe(store.game, lv.level, lv.level_no);
-    return { level: lv.level_no, rev: lv.rev, mechanics: auto.mechanics, difficulty: auto.difficulty, time: auto.time, uniqueColor: auto.uniqueColor, totalBlock: auto.totalBlock, obstacleInfos: obstacleInfos(auto.obstacleCounts, spec.obstacleCodes) };
+    const current = listed.get(lv.name);
+    const warn = text => warnings.push({ level: lv.level_no, name: lv.name, text });
+    if (bySha.has(lv.sha)) warn(`Giống hệt nội dung level ${bySha.get(lv.sha)}`);
+    else bySha.set(lv.sha, lv.level_no);
+    if (current?.lock) warn(`Đang được ${current.lock.holder} sửa; phần chưa lưu không được gửi`);
+    if (current && current.head_rev > lv.rev) warn(`Gửi r${lv.rev} đã kiểm tra, bản mới nhất là r${current.head_rev}`);
+    for (const text of checks[i].warnings || []) warn(text);
+    return { level: lv.level_no, name: lv.name, sha: lv.sha, rev: lv.rev, preview: extensions[images.get(lv.sha)] || null,
+      mechanics: auto.mechanics, difficulty: auto.difficulty, time: auto.time, uniqueColor: auto.uniqueColor, totalBlock: auto.totalBlock, obstacleInfos: obstacleInfos(auto.obstacleCounts, spec.obstacleCodes) };
   });
   return {
-    zipName: composeZipName(spec.acronym, req.os, req.fromLv, req.toLv, req.geo, req.why, req.designer, nowMs, req.version),
-    levelCount: inRange.length, missing: missing.slice(0, 500), missingTotal: missing.length, errors, rows, _levels: inRange,
+    zipName: composeZipName(spec.acronym, req.os, req.fromLv, req.toLv, req.geo, req.why, req.designer, nowMs, req.version, req.date),
+    levelCount: inRange.length, missing: missing.slice(0, 500), missingTotal: missing.length, errors, warnings, rows, _levels: inRange,
+    previewCount: rows.filter(x => x.preview).length, previewsSupported: true,
     snapshot: inRange.map(lv => ({ level: lv.level_no, name: lv.name, rev: lv.rev, sha: lv.sha })),
   };
 }
@@ -122,6 +144,11 @@ export function buildZip(store, req, nowMs = Date.now()) {
     };
     rows.push(Object.fromEntries(FIELD_ORDER.map(k => [k, values[k]])));
     entries.push({ name: `Raw/${n}.json`, data: Buffer.from(JSON.stringify(lv.level, null, 2), 'utf8') });
+    const ext = report.rows[rows.length - 1].preview;
+    if (req.previews && ext) {
+      const image = store.db.get('SELECT data FROM thumbs WHERE sha=?', lv.sha);
+      if (image) entries.push({ name: `Previews/${n}.${ext}`, data: Buffer.from(image.data) });
+    }
   }
   entries.push({ name: 'LevelMetadata.json', data: Buffer.from(JSON.stringify({ Levels: rows }, null, 4), 'utf8') });
   const summary = {

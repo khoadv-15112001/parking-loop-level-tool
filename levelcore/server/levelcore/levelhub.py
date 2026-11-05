@@ -10,6 +10,7 @@ khai báo ở GamePlugin.levelhub (LevelHubSpec) — store.game.levelhub.
 """
 import io
 import json
+import re
 import zipfile
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -74,11 +75,11 @@ def join_geo(tags) -> str:
     return "-".join(t for t in (_sanitize(x) for x in tags or []) if t)
 
 
-def compose_zip_name(acronym, os_name, from_lv, to_lv, geo, why, designer, day: date, version) -> str:
+def compose_zip_name(acronym, os_name, from_lv, to_lv, geo, why, designer, day: date, version, group_date="") -> str:
     designer = str(designer or "")
     designer = designer.split("@", 1)[0]
     return "_".join((_sanitize(acronym), os_name, str(int(from_lv)), str(int(to_lv)), join_geo(geo),
-                     _sanitize(why), _sanitize(designer), day.strftime("%d%m"), normalize_version(version))) + ".zip"
+                     _sanitize(why), _sanitize(designer), group_date or day.strftime("%d%m"), normalize_version(version))) + ".zip"
 
 
 def _row_date(updated_at: str | None) -> str:
@@ -104,18 +105,28 @@ class ExportRequest:
     version: str = "v1"
     allow_missing: bool = False
     snapshot: list | None = None
+    date: str = ""
+    previews: bool = False
 
     @classmethod
     def parse(cls, pack: str, body: dict) -> "ExportRequest":
         def num(k):
             v = body.get(k)
-            if not isinstance(v, int) or isinstance(v, bool) or v < 1:
+            if not isinstance(v, int) or isinstance(v, bool) or v < 1 or v > 9007199254740991:
                 raise RequestError(f"{k} phải là số nguyên ≥ 1")
             return v
 
         req = cls(pack=pack, from_lv=num("from_lv"), to_lv=num("to_lv"))
         if req.from_lv > req.to_lv:
             raise RequestError("from_lv phải ≤ to_lv")
+        if req.to_lv - req.from_lv >= MAX_SNAPSHOT:
+            raise RequestError("Mỗi gói tối đa 20000 level")
+        req.date = body.get("date", "")
+        if not isinstance(req.date, str) or (req.date and not re.fullmatch(r"(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])", req.date)):
+            raise RequestError("Ngày phải dạng ddMM")
+        if "previews" in body and not isinstance(body["previews"], bool):
+            raise RequestError("previews phải là boolean")
+        req.previews = body.get("previews") is True
         req.os_name = body.get("os", "Android")
         if req.os_name not in OS_CODES:
             raise RequestError("os phải là Android | iOS")
@@ -139,6 +150,10 @@ class ExportRequest:
                     and isinstance(x.get("sha"), str) and isinstance(x.get("level"), int) for x in snap):
                 raise RequestError("snapshot phải là mảng {level, name, rev, sha} lấy từ bước Kiểm tra")
             req.snapshot = snap
+            if (len({x["name"] for x in snap}) != len(snap) or len({x["level"] for x in snap}) != len(snap)
+                    or any(type(x["level"]) is not int or type(x["rev"]) is not int or not 1 <= x["level"] <= 9007199254740991
+                           or not 1 <= x["rev"] <= 9007199254740991 for x in snap)):
+                raise RequestError("snapshot có level trùng hoặc không hợp lệ — bấm Kiểm tra lại")
         return req
 
 
@@ -156,17 +171,30 @@ def preflight(store, req: ExportRequest, today: date | None = None) -> dict:
     spec = spec_of(store)
     vres = store._validate([(lv["name"], lv["level"]) for lv in in_range])
     errors = [{"level": lv["level_no"], "errors": v["errors"][:10]} for lv, v in zip(in_range, vres) if not v["isValid"]]
-    rows = []
-    for lv in in_range:
+    rows, warnings, by_sha = [], [], {}
+    listed = {lv["name"]: lv for lv in store.list_levels(req.pack)}
+    for lv, check in zip(in_range, vres):
         auto = describe(spec, lv["level"], lv["level_no"])
-        rows.append({"level": lv["level_no"], "rev": lv["rev"], "mechanics": auto["mechanics"],
+        current = listed.get(lv["name"], {})
+        messages = list(check.get("warnings") or [])
+        if lv["sha"] in by_sha:
+            messages.append(f"Giống hệt nội dung level {by_sha[lv['sha']]}")
+        else:
+            by_sha[lv["sha"]] = lv["level_no"]
+        if current.get("lock"):
+            messages.append(f"Đang được {current['lock']['holder']} sửa; phần chưa lưu không được gửi")
+        if current.get("head_rev", 0) > lv["rev"]:
+            messages.append(f"Gửi r{lv['rev']} đã kiểm tra, bản mới nhất là r{current['head_rev']}")
+        warnings.extend({"level": lv["level_no"], "name": lv["name"], "text": text} for text in messages)
+        rows.append({"level": lv["level_no"], "name": lv["name"], "sha": lv["sha"], "preview": None,
+                     "rev": lv["rev"], "mechanics": auto["mechanics"],
                      "difficulty": auto["difficulty"], "time": auto["time"], "uniqueColor": auto["uniqueColor"],
                      "totalBlock": auto["totalBlock"], "obstacleInfos": obstacle_infos(auto["obstacleCounts"], spec.obstacle_codes)})
     day = today or datetime.now(VN_TZ).date()
     return {"zipName": compose_zip_name(spec.acronym, req.os_name, req.from_lv, req.to_lv, req.geo, req.why, req.designer,
-                                        day, req.version),
+                                        day, req.version, req.date),
             "levelCount": len(in_range), "missing": missing[:500], "missingTotal": len(missing), "errors": errors,
-            "rows": rows, "_levels": in_range,
+            "rows": rows, "warnings": warnings, "previewCount": 0, "previewsSupported": False, "_levels": in_range,
             "snapshot": [{"level": lv["level_no"], "name": lv["name"], "rev": lv["rev"], "sha": lv["sha"]} for lv in in_range]}
 
 

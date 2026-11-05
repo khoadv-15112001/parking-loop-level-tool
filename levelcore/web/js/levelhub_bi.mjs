@@ -2,7 +2,7 @@
 //   openLevelHubBrowser — dropdown các bộ (asset group) của game đang có trên Level Hub → chọn file level → nhập vào bộ đang mở.
 //   uploadToBi          — đẩy gói Level Hub của dải level lên BI rồi theo dõi trạng thái xử lý.
 import { api } from './api.mjs';
-import { biLogin } from './biauth.mjs';
+import { biLogin, clearBiLogin } from './biauth.mjs';
 import { $, $$, confirmDialog, esc, fmtTime, openDialog, toast } from './ui.mjs';
 
 // BI trả trang dạng {items, total, currentPage, totalPages, hasMore}; giữ đủ các tên trường AntLevel đã gặp.
@@ -251,24 +251,34 @@ export async function openLevelHubBrowser(pack, readOnly, onImported, onOpenPack
 }
 
 /** "Đẩy lên BI" trong hộp Xuất Level Hub: body = tham số xuất (from_lv, to_lv, os, geo, …) + description. */
-export async function uploadToBi(pack, body, reportEl) {
+export async function uploadToBi(pack, body, reportEl, { track = true, signal } = {}) {
+  signal?.throwIfAborted();
   const login = await biLogin();   // việc đầu tiên trong click: popup chỉ mở được lúc còn thao tác người dùng
-  const res = await api.levelhubUpload(pack, body, login.token);
+  signal?.throwIfAborted();
+  let res;
+  try {
+    res = await api.levelhubUpload(pack, body, login.token);
+  } catch (e) {
+    if (e.body?.bi_status === 401) clearBiLogin();
+    throw e;
+  }
   const id = res.group && groupId(res.group);
   reportEl.innerHTML = `<p class="ok">Đã gửi bộ <b>${esc(res.name)}</b> (${esc(res.levelCount)} level) lên BI. `
     + 'BI đang xử lý (chờ Unity CI dựng bundle — PROCESSING lâu là bình thường).</p>'
     + (res.recovered ? '<p class="warn">BI không trả lời lúc tạo bộ, nhưng đã thấy bộ này trên BI — không cần đẩy lại.</p>' : '')
     + (res.newer?.length ? `<p class="muted">Level ${esc(res.newer.join(', '))} đã được sửa sau khi kiểm tra; gói dùng bản đã kiểm tra.</p>` : '');
   toast(`Đã đẩy ${res.name} lên BI Level Hub`, 'ok');
-  if (!id) return res;
+  if (!id || !track) return res;
   for (let i = 0; i < 12; i++) {   // theo dõi ~1 phút
     await new Promise(r => setTimeout(r, 5000));
+    if (signal?.aborted || !reportEl.isConnected) return res;
     let g;
     try {
       g = await api.biGroup(login.token, id);
     } catch {
       continue;
     }
+    if (signal?.aborted || !reportEl.isConnected) return res;
     const st = groupStatus(g);
     if (st === 'READY' || st === 'FAILED') {
       reportEl.insertAdjacentHTML('beforeend', `<p class="${st === 'READY' ? 'ok' : 'err'}">Trạng thái: ${esc(st)}`
