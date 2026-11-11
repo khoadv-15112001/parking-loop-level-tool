@@ -6,6 +6,7 @@ import sqlite3
 import zipfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from levelcore.app import create_app
@@ -88,6 +89,43 @@ def test_empty_admins_is_nobody_outside_dev():
     assert not s.is_admin("x@sonat.vn")
     s.dev = True
     assert s.is_admin("x@sonat.vn")
+
+
+def ui_manifest(tmp_path, name):
+    manifest = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    manifest["rules"] = str(SAMPLE.parent / manifest["rules"])
+    manifest["web"] = "web"
+    manifest["uiTemplate"] = name
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
+def test_selected_ui_template(tmp_path):
+    own = ":root { --lc-accent: rebeccapurple; }"
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "game.css").write_text(own, encoding="utf-8")
+    game = GamePlugin.from_manifest(ui_manifest(tmp_path, "sand-jam"))
+    _, client = make_client(tmp_path, game)
+    with client:
+        selected = client.get("/core/ui-template.css")
+        direct = client.get("/core/ui-templates/sand-jam/template.css")
+        assert selected.status_code == direct.status_code == 200
+        assert selected.headers["content-type"].startswith("text/css")
+        assert "--lc-accent" in selected.text and selected.content == direct.content
+        assert client.get("/app/game/game.css").text == own
+
+
+@pytest.mark.parametrize("name", [None, {}, "", "../sand-jam", "Sand-Jam"])
+def test_invalid_ui_template_id(tmp_path, name):
+    with pytest.raises(RuntimeError, match="uiTemplate phải là tên mẫu"):
+        GamePlugin.from_manifest(ui_manifest(tmp_path, name))
+
+
+def test_unknown_ui_template_id(tmp_path):
+    game = GamePlugin.from_manifest(ui_manifest(tmp_path, "missing-template"))
+    with pytest.raises(RuntimeError, match='uiTemplate "missing-template" không có'):
+        make_client(tmp_path, game)
 
 
 def test_opens_db_from_main_647dc34(tmp_path):

@@ -40,6 +40,12 @@ def _etag(rev: int) -> dict:
 
 def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
     s = settings or Settings.from_env(game)
+    core_web = s.web_root_dir() / "levelcore" / "web"
+    ui_template = None
+    if game.ui_template is not None:
+        ui_template = core_web / "ui-templates" / game.ui_template / "template.css"
+        if not ui_template.is_file():
+            raise RuntimeError(f'uiTemplate "{game.ui_template}" không có trong kho levelcore/web/ui-templates')
     db = DB(s.db_path)
 
     @asynccontextmanager
@@ -454,12 +460,10 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
 
     # ----- bản web: /app/* = levelcore/web (vỏ chung) hoặc giao diện riêng của game (manifest "app"),
     # /app/game/* = game/web (module riêng của game), /core/* = levelcore/web cho giao diện riêng import -----
-    web = s.web_root_dir()
-    if (web / "levelcore" / "web" / "index.html").is_file():
+    if (core_web / "index.html").is_file():
         from fastapi.staticfiles import StaticFiles
 
         # Game không có game.mjs riêng thì dùng game.mjs mặc định của core (dựng từ manifest + module luật).
-        core_web = web / "levelcore" / "web"
         fallbacks = {"game.mjs": core_web / "js" / "default_game.mjs", "ui.mjs": core_web / "js" / "empty_ui.mjs"}
         if game.manifest_file:
             fallbacks.update({"manifest.json": Path(game.manifest_file), "rules.mjs": Path(game.validator_module)})
@@ -477,10 +481,16 @@ def create_app(game: GamePlugin, settings: Settings | None = None) -> FastAPI:
                 return JSONResponse([])
             raise ApiError(404, "Not Found")
 
+        @app.api_route("/core/ui-template.css", methods=["GET", "HEAD"], include_in_schema=False)
+        def _ui_template():
+            if ui_template is None:
+                return Response("", media_type="text/css")
+            return FileResponse(ui_template, media_type="text/css")
+
         # trước /app; repo core không có game/ (check_dir=False: chỉ 404)
         app.mount("/app/game", StaticFiles(directory=s.game_web_dir(), check_dir=False), name="web-game")
-        app.mount("/core", StaticFiles(directory=web / "levelcore" / "web"), name="web-core")
-        app.mount("/app", StaticFiles(directory=s.game_app or web / "levelcore" / "web", html=True), name="web-app")
+        app.mount("/core", StaticFiles(directory=core_web), name="web-core")
+        app.mount("/app", StaticFiles(directory=s.game_app or core_web, html=True), name="web-app")
 
         @app.middleware("http")
         async def _gate_web(request: Request, call_next):

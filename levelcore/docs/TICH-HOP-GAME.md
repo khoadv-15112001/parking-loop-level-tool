@@ -140,7 +140,7 @@ quản lý tài nguyên tại [Chọn runtime cho tool](../README.md#chọn-runt
 
 | Mức | Khi nào | Game viết |
 | --- | --- | --- |
-| 1. Vỏ của core | GD sửa thông số level và xem bằng game thật | không viết giao diện; `fields`, `levelSummary`, `thumbnail` trong `rules.mjs` |
+| 1. Vỏ của core | GD sửa thông số level và xem bằng game thật | `fields`, `levelSummary`, `thumbnail` trong `rules.mjs`, có thể chọn [mẫu giao diện](UI-TEMPLATES.md) |
 | 2. Vỏ của core + hook | game cần editor riêng (canvas, lưới, bảng công cụ), chip riêng ở danh sách | `game/web/ui.mjs` chỉ chứa hook game thêm; màu ở `game/web/game.css` |
 | 3. Giao diện riêng hoàn toàn | cách làm việc của GD khác hẳn (hiếm) | thư mục `game/app/` + `"app": "app"` trong manifest; dùng module ở `/core/js/` |
 
@@ -200,6 +200,7 @@ node levelcore/tools/new_game.mjs --tool FishLevel --game "Fish Sort" --prefix F
 | `--port` | cổng khi chạy ở máy, mặc định 8880 |
 | `--raw <thư mục>` | chép tối đa 8 file `<số>.json` (rải đều theo số) vào `game/tests/raw/`, giữ nguyên byte |
 | `--storage` | tiền tố localStorage, mặc định theo slug |
+| `--ui-template sand-jam` | tuỳ chọn mẫu giao diện Sand Jam cho vỏ core |
 
 Lệnh sinh: `game/manifest.json`, `game/web/rules.mjs` (khung), `game/web/releases.json`, `game/tests/`, `game/game.env`,
 `game/.env.example`, `bi.yaml`, `README.md`, `AGENTS.md`, `CLAUDE.md`. Không sinh code giao diện. Không ghi đè file đã có.
@@ -259,6 +260,7 @@ Hướng dẫn:
 | `webgame` | `id` và `tag` của bridge (bước 8); phải khớp với bản WebGL |
 | `overview` | khoá tóm tắt mặc định để chia nhóm / vẽ đường |
 | `listView` | `"grid"` = lần đầu mở tool vào Thư viện (game nhìn hình là nhận ra level) |
+| `uiTemplate` | chọn [mẫu giao diện của core](UI-TEMPLATES.md), ví dụ `"sand-jam"` |
 | `layout` | bố cục mặc định (như hook `layout` ở bước 7) |
 | `app` | chỉ khi giao diện mức 3 |
 
@@ -291,7 +293,10 @@ Kịch bản thử (mỗi ý phải đúng):
 
 **Xong khi:** đủ 6 ý; ghi lại ý nào chưa đúng và vì sao.
 
-### Bước 7. Giao diện (chỉ khi cần mức 2)
+### Bước 7. Mẫu giao diện và tuỳ chỉnh
+
+Thêm `"uiTemplate": "sand-jam"` vào manifest để dùng mẫu Sand Jam trên vỏ core. Khi tạo tool mới, có thể thêm
+`--ui-template sand-jam` vào lệnh ở bước 3. Xem [kho mẫu giao diện](UI-TEMPLATES.md).
 
 `game/web/ui.mjs` chỉ export những gì game thêm; core gộp với phần dựng từ manifest. Thiếu file thì server trả object rỗng.
 

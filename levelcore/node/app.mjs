@@ -17,6 +17,7 @@ import { Links } from './links.mjs';
 import { Plays } from './plays.mjs';
 import { MAX_THUMB_BYTES, Thumbs } from './thumbs.mjs';
 import { iso, now, parseTime, Store } from './store.mjs';
+import { resolveUiTemplate } from './ui-template.mjs';
 import { Builds, CHUNK_BYTES, ChunkUploads, MAX_ZIP_BYTES, streamToFile } from './webgame.mjs';
 
 const WEB_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
@@ -45,6 +46,8 @@ function pageParam(url) {
 }
 
 export function createApp(game, s) {
+  const coreWebDir = path.join(s.webRoot, 'levelcore', 'web');
+  const uiTemplate = resolveUiTemplate(coreWebDir, game.manifest.uiTemplate);
   const db = new DB(s.dbPath);
   const broker = new Broker(now);
   const store = new Store(db, broker, s, game);
@@ -453,7 +456,6 @@ export function createApp(game, s) {
   }
 
   const webHeaders = { 'Content-Security-Policy': WEB_CSP, 'Cache-Control': 'private, no-cache' };
-  const coreWebDir = path.join(s.webRoot, 'levelcore', 'web');
   const appDir = game.appDir || coreWebDir;
   // Game không có game.mjs riêng thì dùng game.mjs mặc định của core (dựng từ manifest + module luật).
   const gameWebFallback = {
@@ -556,6 +558,12 @@ export function createApp(game, s) {
     }
     if (isGame && builds.serve(req, res, safeDecode(p.slice('/game/'.length)))) return;
     if (isGame) throw new ApiError(404, 'Chưa có bản game WebGL — tải bản build lên (README: Chơi thử bằng game thật)');
+    if (p === '/core/ui-template.css') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') throw new ApiError(405, 'Method Not Allowed');
+      if (!uiTemplate) return sendBytes(res, 200, Buffer.alloc(0), { 'Content-Type': 'text/css; charset=utf-8', ...webHeaders });
+      if (serveFile(res, path.dirname(uiTemplate), path.basename(uiTemplate), webHeaders)) return;
+      throw new ApiError(404, 'Not Found');
+    }
     if (p.startsWith('/app/game/')) return serveGameWeb(res, p.slice('/app/game/'.length));
     if (p.startsWith('/core/') && serveFile(res, coreWebDir, p.slice('/core/'.length), webHeaders)) return;
     if (p.startsWith('/app/') && !p.startsWith('/app/game/') && serveFile(res, appDir, p.slice('/app/'.length), webHeaders)) return;

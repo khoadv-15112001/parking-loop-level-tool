@@ -60,10 +60,37 @@ test('CI: level chờ quá 2 giờ không có player thì bị bỏ, player tớ
 });
 
 test('Giao diện riêng của game (manifest "app") thay vỏ của core; module core vẫn import được ở /core/', async t => {
-  const get = await start(t, { app: 'ui' }, { 'ui/index.html': '<html>game ui</html>' });
+  const get = await start(t, { app: 'ui', uiTemplate: 'sand-jam' }, { 'ui/index.html': '<html>game ui</html>' });
   assert.equal(await (await get('/app/')).text(), '<html>game ui</html>');
   const core = await get('/core/js/api.mjs');
   assert.equal(core.status, 200);
   assert.match(await core.text(), /setStoragePrefix/);
   assert.ok(core.headers.get('content-security-policy'));
+});
+
+test('Mẫu Sand Jam được phục vụ cho game khác, CSS riêng của game vẫn dùng được', async t => {
+  const own = ':root { --lc-accent: rebeccapurple; }';
+  const get = await start(t, { uiTemplate: 'sand-jam' }, { 'web/game.css': own });
+  const [selected, direct, game] = await Promise.all([
+    get('/core/ui-template.css'), get('/core/ui-templates/sand-jam/template.css'), get('/app/game/game.css'),
+  ]);
+  for (const r of [selected, direct, game]) {
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/css\b/);
+  }
+  const css = await selected.text();
+  assert.match(css, /--lc-accent\s*:/);
+  assert.equal(css, await direct.text());
+  assert.equal(await game.text(), own);
+});
+
+test('Tên mẫu sai hoặc mẫu không có được báo trước khi mở DB', async () => {
+  const game = await loadGame(path.join(SAMPLE, 'manifest.json'), SAMPLE);
+  const s = settingsFromEnv(game.manifest, {});
+  for (const id of [null, {}, '', '../sand-jam', 'Sand-Jam']) {
+    game.manifest.uiTemplate = id;
+    assert.throws(() => createApp(game, s), /uiTemplate phải là tên mẫu/);
+  }
+  game.manifest.uiTemplate = 'missing-template';
+  assert.throws(() => createApp(game, s), /uiTemplate "missing-template" không có/);
 });

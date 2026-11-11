@@ -13,7 +13,7 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Server Node: level đã xoá và bộ lưu trữ bị xoá hẳn sau 30 ngày (đổi ở Quản trị); lưu trữ bộ phải ghi lý do.
 
 ### Mới
-- Game mới: `new_game.mjs` chỉ sinh manifest, luật JS, test; core dựng giao diện, game muốn riêng thì khai `app`.
+- Core sinh manifest, luật và test cho game mới, có mẫu Sand Jam với bố cục màn, popup và thành phần UI.
 - Server Node đủ route như server Python; bản game từ Jenkins: nhánh theo dõi lên ngay, nhánh khác chờ admin chọn.
 - Chơi thử: link + QR cho điện thoại, ▶ Chơi rN trong Lịch sử, mọi lượt chơi được lưu (xuất JSONL cho phân tích, AI).
 - Màn Thư viện, Thứ tự, Tổng quan bộ, Hoạt động; Level Hub có chọn dải trực quan, ảnh game và lịch sử đẩy.
@@ -33,7 +33,7 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 
 ### Cho Dev
 - Route mới (chỉ server Node): `/api/plays*`, `/api/links*`, `/p/<token>*`, `/api/thumbs/*`, `/reorder`, `/api/admin/*`.
-- Biến `<PREFIX>_CI_*`; manifest thêm `slug`, `storagePrefix`, `webgame`, `app`, `overview`, `layout`.
+- Biến `<PREFIX>_CI_*`; manifest thêm `slug`, `storagePrefix`, `webgame`, `app`, `overview`, `layout`, `uiTemplate`.
 - DB: bảng `ci_levels`, `settings`, `plays`, `play_events`, `share_links`, `thumbs`; revision ghi `formatVersion`.
 - Bridge: `ready {caps: ['capture']}`, lệnh `Capture`, sự kiện `{type: 'event'}` vào lượt chơi, `src=` ở `level_start`.
 - Runtime: ưu tiên Node (`deploy/Dockerfile.node`, `RUNTIME`); Python giữ tương thích, UI thêm qua `game/web/ui.mjs`.

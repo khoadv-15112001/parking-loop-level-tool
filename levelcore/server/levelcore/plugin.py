@@ -9,6 +9,7 @@ Game mới không cần Python: khai game/manifest.json và viết luật bằng
 """
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -64,6 +65,7 @@ class GamePlugin:
     rules: Any = None                    # JsRules chạy module luật JS (from_manifest); None = plugin Python
     from_manifest_file: bool = False     # game mới: <PREFIX>_ADMINS rỗng không cấp quyền admin cho ai
     manifest_file: str = ""              # đường dẫn game/manifest.json (web đọc ở /app/game/manifest.json)
+    ui_template: str | None = None
 
     @classmethod
     def from_manifest(cls, path: str | os.PathLike) -> "GamePlugin":
@@ -75,6 +77,10 @@ class GamePlugin:
         for k in ("tool", "game", "prefix", "rules"):
             if not m.get(k):
                 raise RuntimeError(f"{path}: thiếu trường '{k}'")
+        ui_template = m.get("uiTemplate")
+        if "uiTemplate" in m and (not isinstance(ui_template, str)
+                                  or not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", ui_template)):
+            raise RuntimeError(f'{path}: uiTemplate phải là tên mẫu chữ thường, ví dụ "sand-jam"')
         base = path.parent
         rules_path = (base / m["rules"]).resolve()
         js = JsRules(rules_path, node=os.environ.get(f"{m['prefix']}_NODE", "node"))
@@ -112,5 +118,5 @@ class GamePlugin:
                    default_packs=tuple(m.get("defaultPacks") or ("develop", "product")), bi_app_id=m.get("biAppId", ""),
                    levelhub=hub, format_version=m.get("formatVersion"),
                    web_dir=str((base / m["web"]).resolve()) if m.get("web") else str(rules_path.parent),
-                   manifest_file=str(path),
+                   manifest_file=str(path), ui_template=ui_template,
                    app_dir=str((base / m["app"]).resolve()) if m.get("app") else "", rules=js, from_manifest_file=True)

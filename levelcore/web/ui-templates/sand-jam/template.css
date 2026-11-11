@@ -1,0 +1,184 @@
+@import url('/core/ui-templates/sand-jam/layouts.css');
+@import url('/core/ui-templates/sand-jam/components.css');
+@import url('/core/ui-templates/sand-jam/overlays.css');
+
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-vietnamese-400-normal.woff2') format('woff2'); unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-latin-ext-400-normal.woff2') format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 500; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-vietnamese-500-normal.woff2') format('woff2'); unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 500; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-latin-ext-500-normal.woff2') format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 500; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-latin-500-normal.woff2') format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-vietnamese-600-normal.woff2') format('woff2'); unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-latin-ext-600-normal.woff2') format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-latin-600-normal.woff2') format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-vietnamese-700-normal.woff2') format('woff2'); unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-latin-ext-700-normal.woff2') format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url('/core/ui-templates/sand-jam/fonts/be-vietnam-pro-latin-700-normal.woff2') format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
+:root {
+  --lc-bg: #f4f0e8;
+  --lc-surface: #ffffff;
+  --lc-surface-2: #faf7f1;
+  --lc-border: #e8e0d2;
+  --lc-text: #241e17;
+  --lc-muted: #756a5d;
+  --lc-accent: #a3540c;
+  --lc-accent-text: #ffffff;
+  --lc-ok: #287238;
+  --lc-warn: #8c5408;
+  --lc-err: #bb3229;
+  --lc-sel: #fcebd7;
+  --lc-preview-bg: #efe6d6;
+  --sj-hover: #f7f0e4;
+  --sj-overlay: rgb(36 24 10 / .38);
+  --sj-shadow-sm: 0 1px 2px rgb(60 40 10 / .06);
+  --sj-shadow: 0 10px 30px rgb(60 40 10 / .14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --lc-bg: #12100d;
+    --lc-surface: #1b1814;
+    --lc-surface-2: #211d18;
+    --lc-border: #2d2720;
+    --lc-text: #f0e8dc;
+    --lc-muted: #a3978a;
+    --lc-accent: #f0943a;
+    --lc-accent-text: #1d1206;
+    --lc-ok: #62c477;
+    --lc-warn: #f0b44a;
+    --lc-err: #ff6f64;
+    --lc-sel: #392614;
+    --lc-preview-bg: #27221c;
+    --sj-hover: #28231d;
+    --sj-overlay: rgb(0 0 0 / .58);
+    --sj-shadow-sm: 0 1px 2px rgb(0 0 0 / .3);
+    --sj-shadow: 0 12px 36px rgb(0 0 0 / .5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --lc-bg: #12100d;
+  --lc-surface: #1b1814;
+  --lc-surface-2: #211d18;
+  --lc-border: #2d2720;
+  --lc-text: #f0e8dc;
+  --lc-muted: #a3978a;
+  --lc-accent: #f0943a;
+  --lc-accent-text: #1d1206;
+  --lc-ok: #62c477;
+  --lc-warn: #f0b44a;
+  --lc-err: #ff6f64;
+  --lc-sel: #392614;
+  --lc-preview-bg: #27221c;
+  --sj-hover: #28231d;
+  --sj-overlay: rgb(0 0 0 / .58);
+  --sj-shadow-sm: 0 1px 2px rgb(0 0 0 / .3);
+  --sj-shadow: 0 12px 36px rgb(0 0 0 / .5);
+}
+
+body {
+  font: 13px/1.45 "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--lc-sel); color: var(--lc-text); }
+a { color: var(--lc-accent); }
+.sj-icon, .sj-obstacle-icon { display: inline-block; vertical-align: middle; flex: none; }
+.sj-obstacle-icon { background-repeat: no-repeat; }
+
+button, .btn, select, input, textarea, .more-menu > summary {
+  border-color: color-mix(in srgb, var(--lc-border), var(--lc-text) 8%);
+}
+
+button, .btn, .more-menu > summary { font-weight: 500; }
+button:hover:not(:disabled), .btn:hover, .more-menu > summary:hover {
+  background: var(--sj-hover);
+  border-color: color-mix(in srgb, var(--lc-border), var(--lc-accent) 48%);
+}
+
+button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lc-accent), var(--lc-text) 12%);
+  border-color: transparent;
+}
+
+button.link:hover:not(:disabled) { background: none; }
+button:focus-visible, .btn:focus-visible, .more-menu > summary:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--lc-accent);
+  outline-offset: 2px;
+}
+
+input[type="checkbox"], input[type="radio"] { accent-color: var(--lc-accent); }
+input::placeholder, textarea::placeholder { color: var(--lc-muted); }
+
+.topbar { min-height: 50px; gap: 8px; }
+.brand { font-size: 15px; letter-spacing: -.01em; }
+.views-nav button { color: var(--lc-text); }
+.views-nav button:hover:not(:disabled) { background: var(--sj-hover); }
+.views-nav button.active, .views-nav button.active:hover:not(:disabled) { background: var(--lc-sel); }
+.palette-btn { background: var(--lc-surface-2); border-radius: 8px; }
+.pack-ctl { padding-right: 12px; }
+.level-head .tabs { border: 1px solid var(--lc-border); }
+.level-head .tabs button.active { color: var(--lc-accent); box-shadow: var(--sj-shadow-sm); }
+.statusbar { min-height: 28px; }
+.conn { box-shadow: 0 0 0 3px color-mix(in srgb, var(--lc-err) 12%, transparent); }
+.conn.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--lc-ok) 12%, transparent); }
+
+.badge.ok, .chip.ok { background: color-mix(in srgb, var(--lc-ok) 12%, var(--lc-surface)); }
+.badge.warn, .chip.warn { background: color-mix(in srgb, var(--lc-warn) 12%, var(--lc-surface)); }
+.badge.err, .chip.err { background: color-mix(in srgb, var(--lc-err) 12%, var(--lc-surface)); }
+.level-list li:hover { background: var(--sj-hover); }
+.level-list li.sel { background: var(--lc-sel); }
+
+.card, .cards > li:not(.empty), .hub-card, .history > li {
+  border-radius: 8px;
+  box-shadow: var(--sj-shadow-sm);
+}
+
+.cards > li:not(.empty):hover { border-color: var(--lc-accent); }
+.cards > li.focus { box-shadow: 0 0 0 2px var(--lc-sel); }
+.thumb, .hub-image { background: var(--lc-preview-bg); }
+.thumb { border-radius: 6px; }
+.thumb.sm { border-radius: 5px; }
+.detail { gap: 12px; }
+.stat { border: 1px solid var(--lc-border); }
+.ord-table th, .tbl th { background: var(--lc-surface-2); }
+.ord-table td, .tbl td { border-bottom-color: var(--lc-border); }
+.ord-table tbody tr:hover { background: var(--sj-hover); }
+.ord-table tbody tr.sel { background: var(--lc-sel); }
+
+.login-card, .dialog, .palette, .more-menu .menu { box-shadow: var(--sj-shadow); }
+.login-card { border-radius: 16px; }
+.dialog-backdrop, .palette-backdrop { background: var(--sj-overlay); backdrop-filter: blur(2px); }
+.more-menu .menu { border-radius: 10px; padding: 4px; }
+.more-menu .menu button { background: transparent; border-color: transparent; }
+.more-menu .menu button:hover:not(:disabled) { background: var(--lc-sel); }
+.toast { border-radius: 10px; box-shadow: var(--sj-shadow); }
+
+@media (max-width: 700px) {
+  .topbar { gap: 4px; padding-inline: 8px; }
+  .views-nav button { padding-inline: 8px; }
+  .topbar .user-menu > summary { max-width: 100px; }
+  .ctxbar > .ctx { flex-basis: 100%; }
+  .ctx > * { max-width: 100%; }
+  .lv-actions, .tools-group, .selbar { flex-wrap: wrap; }
+  .cols2 { grid-template-columns: minmax(0, 1fr); }
+  .statusbar { overflow-x: auto; scrollbar-width: thin; }
+}
+
+@media (pointer: coarse) {
+  .views-nav button, .palette-btn, .topbar > .icon, .topbar .user-menu > summary { min-height: 34px; }
+}

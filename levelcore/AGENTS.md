@@ -42,6 +42,8 @@ Game cần core làm thêm việc gì thì thêm điểm mở rộng ở repo co
 
 - Chưa làm gì thì tool dùng vỏ của core (danh sách, form từ `fields`, JSON, lịch sử, nhập / xuất, Level Hub, chơi thử).
   Vỏ này nằm trong `levelcore/`; không chép nó hay code giao diện của game khác vào `game/`.
+- Chọn mẫu có sẵn bằng `uiTemplate` trong manifest hoặc `--ui-template` khi tạo tool. Xem [kho mẫu](docs/UI-TEMPLATES.md).
+  Mẫu dùng chung nằm trong `levelcore/web/ui-templates/`. Đóng góp mẫu mới ở repo core và dùng các hook hiện có cho phần riêng của game.
 - Đổi ít trước khi đổi nhiều: màu → `game/web/game.css` (biến `--lc-*`); editor riêng của game (canvas, bảng công cụ),
   chip ở danh sách / Thư viện, bố cục mặc định → `game/web/ui.mjs` chỉ chứa hook game thêm (`renderEditor`,
   `levelDetail`, `listItem`, `layout`, `shortcuts`; bảng ở `levelcore/README.md`). Các màn Thư viện, Thứ tự, Tổng quan

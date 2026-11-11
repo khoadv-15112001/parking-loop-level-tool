@@ -7,6 +7,19 @@ Base logic for all level tools — phần chung của mọi tool level của Son
 Mỗi game **fork** repo này và chỉ thêm phần riêng ở `game/` (manifest, luật level, test, hook giao diện tuỳ chọn);
 `levelcore/` là của core, game không sửa.
 
+## Kho mẫu giao diện
+
+Mỗi tool có thể chọn một mẫu cho vỏ Core và dùng lại các bố cục, popup, thành phần UI của mẫu trong màn riêng.
+
+### Sand Jam (`sand-jam`)
+
+Giao diện tông cát–cam, có chế độ sáng và tối. Bộ mẫu gồm 12 bố cục, 36 ví dụ popup tương tác và bộ điều khiển cho
+Kho level, Bộ xếp level, editor và khung Chơi thử.
+
+[![Kho level trong bản xem mẫu Sand Jam, với bộ lọc, lưới level và ngăn chi tiết](levelcore/docs/images/ui-templates/sand-jam/library.jpg)](levelcore/docs/UI-TEMPLATE-SAND-JAM.md)
+
+[Xem ảnh và chi tiết mẫu Sand Jam](levelcore/docs/UI-TEMPLATE-SAND-JAM.md) · [Chọn hoặc thêm mẫu](levelcore/docs/UI-TEMPLATES.md)
+
 ## Tool đang chạy
 
 Vỏ giao diện của core theo bố cục hai tool đang dùng: các màn ở hàng trên, bộ đang mở và công cụ của màn ở hàng thứ hai,
@@ -35,6 +48,7 @@ Từng màn của Sand Jam có gì, ảnh đánh số và phần nào core đã 
 | Đọc khi | File |
 | --- | --- |
 | **Làm tool cho game mới**: đủ các bước repo tool, Unity (bản WebGL, bridge), Jenkins, BI, Level Hub, kèm link tài liệu CI/CD và BI | [levelcore/docs/TICH-HOP-GAME.md](levelcore/docs/TICH-HOP-GAME.md) |
+| Chọn mẫu giao diện dùng chung cho tool hoặc đóng góp mẫu mới | [Kho mẫu giao diện](levelcore/docs/UI-TEMPLATES.md) |
 | Muốn biết một tool hoàn chỉnh có gì: tính năng từng màn của Sand Jam, ảnh đánh số, đánh dấu phần core đã có / game tự làm | [levelcore/docs/SANDJAM-TINH-NANG.md](levelcore/docs/SANDJAM-TINH-NANG.md) |
 | Quy tắc cho người và AI agent làm tool (chỗ được sửa, chạy, test, giao diện, changelog) | [levelcore/AGENTS.md](levelcore/AGENTS.md) |
 | Core có gì, biến môi trường, hook giao diện, nâng core | [levelcore/README.md](levelcore/README.md) |

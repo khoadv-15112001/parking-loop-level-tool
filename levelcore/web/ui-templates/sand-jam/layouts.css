@@ -1,0 +1,218 @@
+.sj-layout {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--lc-bg);
+  color: var(--lc-text);
+}
+
+.sj-layout [data-sj-slot]:empty { display: none; }
+.sj-layout-scroll { min-width: 0; min-height: 0; flex: 1; overflow: auto; }
+
+[data-sj-layout="login"] { display: grid; place-items: center; padding: 16px; overflow: auto; }
+.sj-login-card {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 400px);
+  padding: 24px;
+  background: var(--lc-surface);
+  border: 1px solid var(--lc-border);
+  border-radius: 16px;
+  box-shadow: var(--sj-shadow);
+}
+.sj-login-brand > :first-child { margin-top: 0; }
+.sj-login-help { color: var(--lc-muted); font-size: 12px; }
+
+.sj-workspace-header,
+.sj-layout-toolbar,
+.sj-workspace-status,
+.sj-workspace-notice,
+.sj-layout-selection,
+.sj-editor-shortcuts {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--lc-surface);
+  border-bottom: 1px solid var(--lc-border);
+  min-width: 0;
+}
+
+.sj-workspace-header { min-height: 50px; }
+.sj-workspace-brand { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; }
+.sj-workspace-nav, .sj-workspace-tools { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.sj-workspace-nav { flex: 1; overflow-x: auto; scrollbar-width: thin; }
+.sj-workspace-tools { flex-wrap: wrap; }
+.sj-workspace-notice { background: var(--lc-sel); }
+.sj-workspace-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.sj-workspace-main { min-width: 0; min-height: 0; overflow: auto; }
+.sj-workspace-playtest, .sj-editor-playtest {
+  width: var(--sj-playtest-width, var(--sj-playtest-default, 340px));
+  min-height: 0;
+  border-left: 1px solid var(--lc-border);
+}
+.sj-workspace-status, .sj-editor-shortcuts, .sj-playtest-build {
+  min-height: 28px;
+  padding-block: 3px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--lc-muted);
+  border-top: 1px solid var(--lc-border);
+  border-bottom: 0;
+  scrollbar-width: thin;
+}
+.sj-workspace-status > *, .sj-editor-shortcuts > * { flex-shrink: 0; }
+
+.sj-library-body, .sj-sequence-body, .sj-editor-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.sj-library-filters {
+  grid-column: 1;
+  width: 178px;
+  overflow: auto;
+  padding: 10px;
+  background: var(--lc-surface);
+  border-right: 1px solid var(--lc-border);
+}
+.sj-library-main { grid-column: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sj-library-main > .sj-layout-scroll { padding: 12px; }
+.sj-library-detail {
+  grid-column: 3;
+  width: var(--sj-detail-width, var(--sj-detail-default, 420px));
+  min-width: 0;
+  overflow: auto;
+  background: var(--lc-surface);
+  border-left: 1px solid var(--lc-border);
+}
+.sj-layout-selection { background: var(--lc-sel); }
+.sj-collection-groups { padding: 12px 14px; }
+.sj-collection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; }
+
+.sj-sequence-navigator { flex: none; padding: 6px 8px; background: var(--lc-surface-2); border-bottom: 1px solid var(--lc-border); }
+.sj-sequence-body { grid-template-columns: minmax(0, 1fr) var(--sj-inspector-width, var(--sj-inspector-default, 340px)); }
+.sj-sequence-body:not(:has(.sj-sequence-detail > :not(:empty))) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sj-sequence-detail, .sj-editor-inspector {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--lc-surface);
+  border-left: 1px solid var(--lc-border);
+}
+.sj-sequence-detail:not(:has(> :not(:empty))), .sj-editor-inspector:not(:has(> :not(:empty))) { display: none; }
+.sj-sequence-selected, .sj-sequence-analysis, .sj-editor-inspector-content { padding: 10px; }
+.sj-sequence-selected { border-bottom: 1px solid var(--lc-border); }
+.sj-layout-tabs { flex: none; min-width: 0; padding: 4px 8px; overflow-x: auto; border-bottom: 1px solid var(--lc-border); }
+
+.sj-editor-body { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: 'levels board inspector playtest'; }
+[data-sj-layout="editor"][data-inspector="left"] > .sj-editor-body {
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: 'levels inspector board playtest';
+}
+.sj-editor-levels {
+  grid-area: levels;
+  width: var(--sj-list-width, var(--sj-list-default, 236px));
+  background: var(--lc-surface);
+  border-right: 1px solid var(--lc-border);
+}
+.sj-editor-board { grid-area: board; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sj-editor-inspector { grid-area: inspector; width: var(--sj-inspector-width, var(--sj-inspector-default, 340px)); }
+.sj-editor-playtest { grid-area: playtest; }
+.sj-editor-stage-toolbar, .sj-editor-metrics {
+  flex: none;
+  padding: 6px 8px;
+  background: var(--lc-surface-2);
+  border-bottom: 1px solid var(--lc-border);
+}
+.sj-editor-metrics { border-bottom: 0; border-top: 1px solid var(--lc-border); }
+.sj-editor-canvas { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.sj-editor-tools { flex: none; padding: 6px; background: var(--lc-surface); border-right: 1px solid var(--lc-border); overflow: auto; }
+.sj-editor-stage, .sj-playtest-stage {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--lc-preview-bg);
+}
+[data-sj-layout="editor"][data-tools="bottom"] .sj-editor-canvas { flex-direction: column; }
+[data-sj-layout="editor"][data-tools="bottom"] .sj-editor-tools {
+  order: 1;
+  border-right: 0;
+  border-top: 1px solid var(--lc-border);
+}
+[data-sj-layout="editor"][data-tools="bottom"] .sj-tool-rail { flex-direction: row; inline-size: auto; }
+[data-sj-layout="editor"][data-focus] .sj-editor-levels,
+[data-sj-layout="editor"][data-focus] .sj-editor-inspector { display: none; }
+
+.sj-overview-body, .sj-activity-body, .sj-settings-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 14px;
+}
+.sj-overview-body > *, .sj-activity-body > *, .sj-settings-body > * { flex-shrink: 0; }
+.sj-overview-reports, .sj-activity-services {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 12px;
+}
+.sj-activity-filters { position: sticky; top: 0; z-index: 1; padding: 6px 0; background: var(--lc-bg); }
+.sj-settings-sections { width: min(100%, 900px); display: grid; gap: 12px; }
+.sj-playtest-controls, .sj-playtest-build { padding-inline: 10px; background: var(--lc-surface); }
+.sj-playtest-controls { flex: none; padding-block: 8px; border-top: 1px solid var(--lc-border); }
+.sj-playtest-stage > iframe { width: 100%; height: 100%; border: 0; }
+
+@container (max-width: 1150px) {
+  .sj-workspace-body, .sj-library-body, .sj-sequence-body, .sj-editor-body {
+    --sj-list-default: 198px;
+    --sj-inspector-default: 280px;
+    --sj-detail-default: 320px;
+    --sj-playtest-default: 285px;
+  }
+}
+
+@container (max-width: 850px) {
+  .sj-workspace-body { display: flex; flex-direction: column; overflow: auto; }
+  .sj-workspace-main { flex: 1; }
+  .sj-workspace-playtest, .sj-editor-playtest { width: auto; }
+  .sj-library-body, .sj-sequence-body, .sj-editor-body,
+  [data-sj-layout="editor"][data-inspector="left"] > .sj-editor-body {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+  .sj-library-main, .sj-sequence-table, .sj-editor-board { flex: 1 0 auto; }
+  .sj-library-filters, .sj-library-detail, .sj-editor-levels, .sj-editor-inspector { width: auto; }
+  .sj-library-filters, .sj-editor-levels { max-height: 28vh; }
+  .sj-library-detail, .sj-sequence-detail, .sj-editor-inspector, .sj-editor-playtest { border: 0; border-top: 1px solid var(--lc-border); }
+  .sj-library-main > .sj-layout-scroll, .sj-sequence-analysis, .sj-editor-inspector-content { flex: auto; }
+  .sj-editor-body > .sj-editor-levels { flex: 0 0 auto; }
+  .sj-editor-stage, .sj-playtest-stage { min-height: 220px; }
+}
+
+@container (max-width: 520px) {
+  .sj-workspace-nav { order: 2; flex-basis: 100%; }
+  .sj-workspace-tools { margin-left: auto; }
+  .sj-layout-toolbar { padding-inline: 8px; }
+}

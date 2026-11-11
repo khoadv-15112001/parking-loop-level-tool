@@ -87,7 +87,7 @@ của revision xuất, không kèm SVG / ảnh sơ đồ; Python vẫn xuất ra
 | Khai báo | `game/manifest.json` + một module luật JS (`rules`) | `game/server/gameplugin` (`GamePlugin(...)`) + validator JS |
 | Server Python | có — hook JS chạy qua một tiến trình node thường trú | có |
 | Server Node (`levelcore/node`) | có — đủ route như server Python | không |
-| Giao diện | vỏ của core, hoặc giao diện riêng của game (`"app"` trong manifest) dùng module của core ở `/core/` | vỏ của core |
+| Giao diện | vỏ của core với mẫu tuỳ chọn (`uiTemplate`), hoặc giao diện riêng (`app`) dùng module ở `/core/` | vỏ của core |
 
 Hợp đồng chung của hai server, cách chạy test hợp đồng, bảng route, định dạng manifest, snapshot Level Hub và CI:
 [`contracts/README.md`](contracts/README.md). Kế hoạch đang làm: [`docs/KE-HOACH-CORE.md`](docs/KE-HOACH-CORE.md); chạy game
@@ -128,9 +128,10 @@ Server: `uvicorn --factory levelcore.main:get_app` với `PYTHONPATH=levelcore/s
 
 Ba mức, từ ít việc tới nhiều việc:
 
-1. **Không viết gì**: vỏ của core dựng mọi màn từ manifest và module luật (`fields`, `levelSummary`, `thumbnail`).
-2. **`game/web/ui.mjs`** (game khai bằng manifest): chỉ export những hook game thêm (`export default {...}`), core gộp với
-   phần dựng từ manifest. Theme: `game/web/game.css` đổi biến màu `--lc-*`. Không có file nào thì server trả mặc định rỗng.
+1. **Vỏ của core** dựng mọi màn từ manifest và module luật (`fields`, `levelSummary`, `thumbnail`). Game có thể chọn mẫu
+   bằng `"uiTemplate": "sand-jam"` hoặc `--ui-template sand-jam` khi tạo tool mới. Xem [kho mẫu](docs/UI-TEMPLATES.md).
+2. **`game/web/ui.mjs`** (game khai bằng manifest) export những hook game thêm (`export default {...}`). Core gộp chúng với
+   phần dựng từ manifest. `game/web/game.css` nạp sau mẫu để game có thể đổi các biến `--lc-*`.
 3. **Giao diện riêng hoàn toàn**: `"app"` trong manifest (xem `AGENTS.md`).
 
 Hook hay dùng ở `ui.mjs` (bảng dưới có đủ):
@@ -150,7 +151,7 @@ số, khung game, thông tin, cột chi tiết) để đổi độ rộng, bấm
 ## Plugin web — `game/web/game.mjs` (game cũ, hoặc game muốn viết lại hết phần game.mjs)
 
 Core phục vụ `levelcore/web` ở `/app/` và `game/web` ở `/app/game/`. Vỏ app nạp `/app/game/game.mjs` (export default)
-và `/app/game/game.css`. Game khai bằng manifest không cần file này (core dựng từ manifest, gộp `ui.mjs`):
+và `/app/game/game.css`. Core có thể dựng `game.mjs` từ manifest và gộp `ui.mjs`:
 
 | Trường | |
 | --- | --- |

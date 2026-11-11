@@ -39,6 +39,7 @@ Test riêng từng server (phần cần chỉnh đồng hồ, giao diện riêng
 | `POST /api/packs/{pack}/import[?dry_run&force&folder&message]`, `GET …/export` | có | có |
 | `GET /api/audit`, `GET /api/events` (SSE) | có | có |
 | `GET /app/*` (vỏ web hoặc giao diện riêng của game), `/app/game/*` (module web của game), `/core/*` (module của core) | có | có |
+| `GET /core/ui-template.css` (CSS của mẫu đã chọn, rỗng khi dùng giao diện mặc định) | có | có |
 | Đăng nhập Google của BI: `GET /bi/login`, `POST /auth/firebase` | có | có |
 | Level Hub: `GET /api/levelhub/options`, `POST /api/packs/{pack}/levelhub/preflight\|export\|upload` | có | có |
 | BI: `GET /api/bi/config`, `/api/bi/asset-groups[/{id}/files[/{file}/raw]]`, `/api/bi/groups/{id}`, `POST /api/bi/groups/{id}/{action}` | có | có |
@@ -91,6 +92,9 @@ Manifest có `"app": "<thư mục>"` thì `/app/` phục vụ thư mục đó th
 cục của core. Module của core vẫn mở ở `/core/` để import: `/core/js/api.mjs` (client API, gọi `setStoragePrefix` trước),
 `query.mjs` (tìm theo số, dải, chữ không dấu), `fields.mjs` (form field), `webgame.mjs` (khung game WebGL),
 `levelhub_bi.mjs`, `biauth.mjs`, `sync.mjs` (SSE, khoá). Không khai `app` thì dùng vỏ của core.
+
+Vỏ của core nạp `/core/ui-template.css` (`text/css`) giữa `css/app.css` và `game/game.css`. Giao diện riêng tự quản lý
+các stylesheet và có thể nạp `/core/ui-templates/<id>/template.css` nếu dùng cùng cấu trúc với vỏ core.
 
 ## Xuất Level Hub theo snapshot
 
@@ -192,6 +196,11 @@ có trong file thì giữ nguyên.
 Bắt buộc: `tool`, `game`, `prefix`, `rules`. `web` (mặc định thư mục chứa `rules`) phục vụ ở `/app/game/`, trình duyệt
 đọc được mọi file trong đó. Không có `web/game.mjs` thì core dựng nó từ manifest (`slug`, `storagePrefix`, `webgame`) và
 module luật (`fields`). `app` là giao diện riêng của game (bỏ thì dùng vỏ của core). `web/releases.json` là bảng Có gì mới.
+
+`uiTemplate` là mã mẫu tuỳ chọn, ví dụ `"sand-jam"`. Bỏ trường này để dùng giao diện mặc định. Mã phải viết thường,
+dùng chữ, số và dấu gạch ngang, đồng thời trỏ tới một mẫu có `levelcore/web/ui-templates/<id>/template.css`. Server báo lỗi
+khi khởi động nếu mã sai hoặc mẫu chưa có. Xem [kho mẫu giao diện](../docs/UI-TEMPLATES.md).
+
 `overview: {group, metric}` chọn khoá tóm tắt mặc định để chia nhóm và vẽ đường ở Tổng quan bộ, Xếp thứ tự.
 `listView: 'grid' | 'list'`: `'grid'` thì lần đầu mở tool vào màn Thư viện (lưới ảnh, hợp với game nhìn hình là nhận ra
 level), mặc định vào màn Level; sau đó tool nhớ màn mỗi người mở lần trước.

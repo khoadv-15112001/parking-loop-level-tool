@@ -20,7 +20,7 @@ function loadQr() {
   return qrLoader;
 }
 
-async function qrImage(url) {
+export async function qrImage(url) {
   const qrcode = await loadQr();
   const qr = qrcode(0, 'M');
   qr.addData(url);

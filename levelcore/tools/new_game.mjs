@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { resolveUiTemplate } from '../node/ui-template.mjs';
 
 const CORE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TEMPLATE = path.join(CORE, 'template');
@@ -26,8 +27,9 @@ function listFiles(dir) {
 }
 
 /** Trả {written, kept}: đường dẫn (từ gốc repo) đã tạo và đã có sẵn nên giữ nguyên. */
-export function scaffold(repo, { tool, game, prefix, slug, runtime = 'node', storage = prefix.toLowerCase(), port = '8880', raw = null }) {
+export function scaffold(repo, { tool, game, prefix, slug, runtime = 'node', storage = prefix.toLowerCase(), port = '8880', raw = null, uiTemplate }) {
   if (fs.existsSync(path.join(repo, 'game'))) throw new Error(`${path.join(repo, 'game')} đã có — không ghi đè`);
+  resolveUiTemplate(path.join(CORE, 'web'), uiTemplate);
   const subs = {
     __TOOL__: tool, __GAME__: game, __PREFIX__: prefix, __SLUG__: slug, __STORAGE__: storage, __RUNTIME__: runtime,
     __DBFILE__: `${tool.toLowerCase()}.db`, __DOCKERFILE__: DOCKERFILES[runtime], __PORT__: String(port),
@@ -42,6 +44,11 @@ export function scaffold(repo, { tool, game, prefix, slug, runtime = 'node', sto
     }
     let text = fs.readFileSync(src, 'utf8');
     for (const [k, v] of Object.entries(subs)) text = text.replaceAll(k, v);
+    if (rel === 'game/manifest.json' && uiTemplate !== undefined) {
+      const manifest = JSON.parse(text);
+      manifest.uiTemplate = uiTemplate;
+      text = `${JSON.stringify(manifest, null, 2)}\n`;
+    }
     fs.mkdirSync(path.dirname(dst), { recursive: true });
     fs.writeFileSync(dst, text);
     written.push(rel);
@@ -65,11 +72,11 @@ function main() {
     options: {
       tool: { type: 'string' }, game: { type: 'string' }, prefix: { type: 'string' }, slug: { type: 'string' },
       runtime: { type: 'string', default: 'node' }, storage: { type: 'string' }, repo: { type: 'string', default: path.dirname(CORE) },
-      port: { type: 'string', default: '8880' }, raw: { type: 'string' },
+      port: { type: 'string', default: '8880' }, raw: { type: 'string' }, 'ui-template': { type: 'string' },
     },
   });
   const fail = msg => {
-    console.error(`${msg}\nCách dùng: node levelcore/tools/new_game.mjs --tool FishLevel --game "Fish Sort" --prefix FISHLEVEL --slug fishsort [--runtime node|python]`);
+    console.error(`${msg}\nCách dùng: node levelcore/tools/new_game.mjs --tool FishLevel --game "Fish Sort" --prefix FISHLEVEL --slug fishsort [--runtime node|python] [--ui-template <mã-mẫu>]`);
     process.exit(2);
   };
   for (const k of ['tool', 'game', 'prefix', 'slug']) if (!a[k]) fail(`Thiếu --${k}`);
@@ -78,7 +85,13 @@ function main() {
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(a.slug)) fail('--slug chỉ gồm chữ thường / số / gạch nối');
   if (!DOCKERFILES[a.runtime]) fail('--runtime là node hoặc python');
   if (!/^\d{2,5}$/.test(a.port)) fail('--port là số cổng, vd 8893');
-  const { written, kept } = scaffold(path.resolve(a.repo), { ...a, storage: a.storage || a.prefix.toLowerCase() });
+  let result;
+  try {
+    result = scaffold(path.resolve(a.repo), { ...a, storage: a.storage || a.prefix.toLowerCase(), uiTemplate: a['ui-template'] });
+  } catch (error) {
+    fail(error.message);
+  }
+  const { written, kept } = result;
   console.log(`Đã tạo phần riêng của ${a.tool} (server ${a.runtime}): ${written.join(', ')}`);
   for (const k of kept) console.log(`  giữ nguyên ${k} (đã có) — so với levelcore/template/${k} rồi tự sửa`);
   console.log(`Tiếp: ${a.raw ? '' : 'đặt raw thật vào game/tests/raw/, '}viết game/web/rules.mjs, chạy node --test game/tests/*.test.mjs, `
