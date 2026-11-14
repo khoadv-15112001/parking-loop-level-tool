@@ -19,6 +19,7 @@
 import { api, authHeaders } from './api.mjs';
 import { PlayRecorder } from './playrecorder.mjs';
 import { $, confirmDialog, esc, openDialog, toast } from './ui.mjs';
+import { applyPixelRatio, currentScreen, downloadBlob, editScreens, fitGame, grabCanvas, savedToast, screenOptions, selectScreen } from './gamescreen.mjs';
 
 const ORIGIN = location.origin;
 const OUTCOME = { win: ['Thắng', 'ok'], lose: ['Thua', 'err'], quit: ['Thoát', 'muted'] };
@@ -148,16 +149,29 @@ function build() {
       <button data-act="lose" title="Thua ngay (cheat)">Thua</button>
       <button data-act="restart" title="Chơi lại level">↺</button>
       <select class="wg-speed" title="Tốc độ game"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select>
+      <select class="wg-screen" title="Kích thước màn hình game. Cố định: game render đúng số pixel rồi thu nhỏ cho vừa khung, 📷 lưu ảnh đúng kích thước"></select>
+      <button data-act="shot" title="Lưu ảnh PNG màn hình game">📷</button>
       <button data-act="reload" title="Tải lại game">⟳</button>
       <button data-act="upload" title="Bản game trên server: bản đang dùng, bản CI chờ chọn, tải bản mới (admin)">⬆</button></header>
-    <div class="wg-frame"><iframe title="${esc(proto.title)}" allow="autoplay; fullscreen"></iframe></div>
+    <div class="wg-frame"><div class="wg-box"><iframe title="${esc(proto.title)}" allow="autoplay; fullscreen"></iframe></div></div>
     <ul class="wg-results small"></ul>`;
   dock.replaceChildren(el);
   if (!proto.manageBuilds) $('[data-act="upload"]', el).remove();
   const iframe = $('iframe', el);
   g = { el, iframe, ready: false, pending: null, want: null, pack: '', levels: null, phase: 'idle', results: [],
-    mode: 'preview', queued: null, highlight: null, source: 'draft' };
+    mode: 'preview', queued: null, highlight: null, source: 'draft', fixed: !!currentScreen().fixed };
   setMode('preview');
+  const box = $('.wg-box', el);
+  g.fit = () => {
+    const scale = fitGame(box, iframe);
+    $('.wg-screen', el).title = `Kích thước màn hình game${scale ? ` · đang thu nhỏ ${Math.round(scale * 100)}%` : ''}. Cố định: game render đúng số pixel, 📷 lưu ảnh đúng kích thước`;
+  };
+  g.observer = new ResizeObserver(() => g?.fit());
+  g.observer.observe(box);
+  iframe.addEventListener('load', () => applyPixelRatio(iframe));
+  $('.wg-screen', el).innerHTML = screenOptions();
+  $('.wg-screen', el).addEventListener('change', e => changeScreen(e.target));
+  g.fit();
   iframe.src = `/game/index.html?parent=${encodeURIComponent(ORIGIN)}`;
   el.addEventListener('click', e => {
     const act = e.target.closest('button[data-act]')?.dataset.act;
@@ -173,6 +187,7 @@ function build() {
       return;
     }
     if (act === 'reload') return reload();
+    if (act === 'shot') return screenshot();
     if (!g.ready) return toast('Game chưa sẵn sàng');
     recorder?.markCheat();
     send('Cheat', act);
@@ -189,6 +204,40 @@ function reload() {
   g.phase = g.pending ? 'pack' : 'idle';
   g.iframe.src = g.iframe.src;
   status('Đang tải lại game…');
+}
+
+async function changeScreen(select) {
+  if (select.value === '+') {
+    select.value = currentScreen().id;
+    await editScreens();
+    if (!g) return;
+  } else {
+    selectScreen(select.value);
+  }
+  select.innerHTML = screenOptions();
+  const fixed = !!currentScreen().fixed;
+  g.fit();
+  if (fixed !== g.fixed) {
+    g.fixed = fixed;
+    reload();
+  }
+}
+
+async function screenshot() {
+  try {
+    let shot = await grabCanvas(g.iframe);
+    if (!shot && canCapture()) {
+      const blob = await (await fetch(await captureNow())).blob();
+      const bitmap = await createImageBitmap(blob);
+      shot = { blob, width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+    }
+    if (!shot) throw new Error('Game chưa vẽ xong hoặc bản game này chưa chụp được: thử lại khi game đang chạy');
+    downloadBlob(shot.blob, `${g.pack || 'game'}${g.want != null ? `_level${g.want}` : ''}_${shot.width}x${shot.height}.png`);
+    savedToast(shot.width, shot.height);
+  } catch (e) {
+    toast(e.message, 'err');
+  }
 }
 
 function setMode(mode) {
@@ -333,6 +382,7 @@ export function highlight(propId) {
 export function close() {
   if (!g) return;
   removeEventListener('message', onMessage);
+  g.observer?.disconnect();
   g.el.remove();
   g = null;
 }

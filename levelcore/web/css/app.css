@@ -397,7 +397,9 @@ svg.chart circle { cursor: pointer; }
 .webgame .wg-head .wg-title { white-space: nowrap; flex: none; }
 .webgame .wg-head .wg-status { flex: 1; min-width: 0; padding: 0 8px; min-height: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .webgame .wg-status.ok { color: var(--lc-ok); } .webgame .wg-status.err { color: var(--lc-err); } .webgame .wg-status.warn { color: var(--lc-warn); }
-.webgame .wg-frame { flex: 1; min-height: 0; background: #000; }
+.webgame .wg-frame { flex: 1; min-height: 0; background: #000; container-type: size; display: grid; place-items: center; overflow: hidden; }
+.webgame .wg-box { --screen-ratio: .5625; position: relative; overflow: hidden; aspect-ratio: var(--screen-ratio); width: min(100cqw, 100cqh * var(--screen-ratio)); }
+.webgame .wg-box.fill { aspect-ratio: auto; width: 100%; height: 100%; }
 .webgame iframe { width: 100%; height: 100%; border: 0; display: block; }
 .webgame .wg-results { margin: 0; padding: 4px 10px 8px 26px; max-height: 120px; overflow: auto; }
 .webgame .wg-results:empty { display: none; }
@@ -414,6 +416,12 @@ svg.chart circle { cursor: pointer; }
 /* ───── link điện thoại, phím tắt, lượt chơi ───── */
 .share-out { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .share-out img.qr { width: 180px; height: 180px; image-rendering: pixelated; background: #fff; border-radius: 6px; }
+.webgame .wg-box.fixed iframe { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; }
+.webgame .wg-head .wg-screen { flex: 0 1 auto; min-width: 0; max-width: 130px; }
+.gs-list { margin: 0 0 10px; padding-left: 18px; }
+.gs-list button { padding: 0 6px; }
+.gs-size { display: flex; align-items: flex-end; gap: 8px; }
+.gs-size label { flex: 1; }
 .share-out input { width: 100%; }
 .share-out > div { flex: 1; min-width: 220px; display: grid; gap: 6px; }
 table.km kbd { font-size: 12px; padding: 1px 6px; }

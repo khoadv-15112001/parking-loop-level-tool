@@ -15,7 +15,7 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 ### Mới
 - Core sinh manifest, luật và test cho game mới, có mẫu Sand Jam với bố cục màn, popup và thành phần UI.
 - Server Node đủ route như server Python; bản game từ Jenkins: nhánh theo dõi lên ngay, nhánh khác chờ admin chọn.
-- Chơi thử: link + QR cho điện thoại, ▶ Chơi rN trong Lịch sử, mọi lượt chơi được lưu (xuất JSONL cho phân tích, AI).
+- Chơi thử: link + QR, ▶ Chơi rN, kích thước màn hình (cố định để chụp SS, 📷); lượt chơi được lưu, xuất JSONL.
 - Màn Thư viện, Thứ tự, Tổng quan bộ, Hoạt động; Level Hub có chọn dải trực quan, ảnh game và lịch sử đẩy.
 - Quản trị Node: sao lưu nén, tối đa 7 bản / 200 MB; thùng rác, quyền, phím tắt và bố cục tự chỉnh.
 

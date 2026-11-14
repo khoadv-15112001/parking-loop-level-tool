@@ -6,6 +6,9 @@ export function setStoragePrefix(prefix) {
   storagePrefix = prefix || storagePrefix;
 }
 
+/** Khoá localStorage theo tiền tố của tool (nhiều tool cùng origin không giẫm nhau). */
+export const storageKey = name => `${storagePrefix}.${name}`;
+
 const DEV_KEY = () => `${storagePrefix}.devUser`;
 const TOKEN_KEY = () => `${storagePrefix}.token`;
 
