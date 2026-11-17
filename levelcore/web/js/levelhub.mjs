@@ -39,6 +39,7 @@ export async function openLevelHub({ pack, levels, packInfo = {}, email = '', bi
       <input id="lh-custom-geo" aria-label="GEO khác, ngăn bằng dấu phẩy" placeholder="GEO khác" title="Nhiều GEO ngăn bằng dấu phẩy"></div></div>
       <div><span class="muted small">Why</span><div id="lh-whys" class="hub-chips">${opt.why.map((x, i) => `<button type="button" data-why="${esc(x)}" aria-pressed="${i === 0}" class="${i === 0 ? 'active' : ''}">${esc(x)}</button>`).join('')}
       <input id="lh-why" aria-label="Lý do khác" placeholder="Lý do khác" maxlength="120"></div></div>
+      <label>Ghi chú version<input id="lh-note" maxlength="500" placeholder="Lý do đẩy, vd: giảm độ khó level 40-60" title="Ghi vào version của bộ trong tool (Quản lý bộ)"></label>
       <label>Mô tả<textarea id="lh-desc" rows="3" maxlength="2000" placeholder="Không bắt buộc; nếu nhập thì tối thiểu 100 ký tự"></textarea><span id="lh-desc-count" class="small muted"></span></label>
       <label class="check"><input id="lh-previews" type="checkbox" checked> Kèm ảnh game (Previews/)</label><div id="lh-preview-note" class="small muted"></div>
       <label class="check"><input id="lh-missing" type="checkbox"> Cho phép thiếu level trong dải</label>
@@ -175,7 +176,7 @@ export async function openLevelHub({ pack, levels, packInfo = {}, email = '', bi
     try {
       const rows = await api.audit({ pack, action: 'levelhub.bi_upload', limit: 8 });
       if (closed) return;
-      field('history').innerHTML = rows.map(x => `<div class="hub-history-item"><b>${esc(x.detail?.zip)}</b><span class="muted">${esc(x.detail?.levels)} level · ${esc(x.user)} · ${fmtTime(x.ts)} · ${esc(x.detail?.env)}</span>${x.detail?.group && x.detail.env === bi.env ? `<button type="button" data-track="${esc(x.detail.group)}">Xem trạng thái trên BI</button>` : ''}</div>`).join('') || '<span class="muted">Bộ này chưa đẩy lần nào</span>';
+      field('history').innerHTML = rows.map(x => `<div class="hub-history-item"><b>${esc(x.detail?.zip)}</b><span class="muted">${esc(x.detail?.levels)} level · ${esc(x.user)} · ${fmtTime(x.ts)} · ${esc(x.detail?.env)}</span>${x.detail?.note ? `<span>${esc(x.detail.note)}</span>` : ''}${x.detail?.group && x.detail.env === bi.env ? `<button type="button" data-track="${esc(x.detail.group)}">Xem trạng thái trên BI</button>` : ''}</div>`).join('') || '<span class="muted">Bộ này chưa đẩy lần nào</span>';
     } catch (e) { if (!closed) field('history').textContent = e.message; }
   }
   async function track(id, interactive = false) {
@@ -202,8 +203,8 @@ export async function openLevelHub({ pack, levels, packInfo = {}, email = '', bi
         else {
           const name = nameParts(opt.game, b).join('_');
           if (!(await confirmDialog('Đẩy bộ lên BI?', `${name}\n${selection().rows.length} level · ${b.os} · BI ${bi.env}\nĐúng revision đã kiểm tra.`, '⇧ Đẩy lên BI'))) return false;
-          const result = await api.levelhubUpload(pack, { ...b, description: field('desc').value.trim() }, account.token);
-          field('report').innerHTML = `<div class="hub-callout ok">Đã gửi ${esc(result.name)} (${result.levelCount} level).${result.recovered ? ' Đã tìm lại bộ sau khi BI mất phản hồi.' : ''}${result.newer?.length ? ` Level ${esc(result.newer.join(', '))} đã có bản mới; gói dùng bản đã kiểm tra.` : ''}</div>`;
+          const result = await api.levelhubUpload(pack, { ...b, description: field('desc').value.trim(), note: field('note').value.trim() }, account.token);
+          field('report').innerHTML = `<div class="hub-callout ok">Đã gửi ${esc(result.name)} (${result.levelCount} level)${result.version ? `, thành version v${esc(result.version.no)} của ${esc(result.version.code)}` : ''}.${result.recovered ? ' Đã tìm lại bộ sau khi BI mất phản hồi.' : ''}${result.newer?.length ? ` Level ${esc(result.newer.join(', '))} đã có bản mới; gói dùng bản đã kiểm tra.` : ''}</div>`;
           toast(`Đã gửi ${result.name}`, 'ok');
           const id = result.group && groupId(result.group);
           if (id) track(id);

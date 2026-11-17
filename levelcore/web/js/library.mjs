@@ -3,6 +3,7 @@
 // nhanh ở cột phải; Ctrl / Shift + bấm để chọn nhiều rồi làm cùng lúc; bấm đúp để mở ở màn Level.
 import { captureMissing, captureOne, fillThumbs, hasImage } from './gallery.mjs';
 import { defaultGroup, groupColors, numericKeys } from './overview.mjs';
+import { liveBrief } from './packs.mjs';
 import { parseLevelQuery, queryMatches } from './query.mjs';
 import { $, esc, fmtTime, shortUser, toast } from './ui.mjs';
 
@@ -33,7 +34,8 @@ export function detailHtml(shell, lv) {
       ${f.webgame ? '<button data-act="play" title="Chơi level này bằng game thật">▶ Chơi thử</button>' : ''}
       ${f.share && f.webgame ? '<button data-act="share" class="icon" title="Link chơi trên điện thoại">📱</button>' : ''}
       ${f.thumbs && f.webgame ? '<button data-act="capture" title="Dựng level trong game rồi chụp lại ảnh">📷 Chụp lại</button>' : ''}</div>
-    ${msgs ? `<div class="validation">${msgs}</div>` : ''}`;
+    ${msgs ? `<div class="validation">${msgs}</div>` : ''}
+    ${f.packflow ? '<div class="level-info" data-level-info></div>' : ''}`;
 }
 
 /** Gắn thao tác của cột chi tiết; current() → level đang xem, after() chạy sau khi chụp lại ảnh. */
@@ -57,7 +59,7 @@ export function wireDetail(shell, el, current, after = () => {}) {
   });
 }
 
-const SORTS = [['num', 'Số level ↑'], ['num-desc', 'Số level ↓'], ['recent', 'Mới sửa trước']];
+const SORTS = [['num', 'Số level ↑'], ['num-desc', 'Số level ↓'], ['recent', 'Mới sửa trước'], ['fw', 'Thắng lần đầu ↑ (BI)']];
 const SIZES = [['s', 'S'], ['m', 'M'], ['l', 'L']];
 
 /**
@@ -71,7 +73,8 @@ export function mountLibrary(shell, root, tools) {
 
   tools.innerHTML = `<input id="lib-search" type="search" placeholder="Tìm: 12, 10-20, chữ…" title="Số level, dải số, danh sách số hoặc chữ (không cần dấu)">
     <select id="lib-check" title="Lọc theo kiểm định"><option value="">Mọi trạng thái</option><option value="err">Có lỗi</option>
-      <option value="warn">Có cảnh báo</option><option value="ok">Hợp lệ</option><option value="noimg">Chưa có ảnh</option></select>
+      <option value="warn">Có cảnh báo</option><option value="ok">Hợp lệ</option><option value="noimg">Chưa có ảnh</option>
+      <option value="live">Khó bất thường (BI)</option></select>
     <span id="lib-groups" class="facets"></span>
     <span class="grow"></span>
     <span id="lib-count" class="muted small"></span>
@@ -88,13 +91,17 @@ export function mountLibrary(shell, root, tools) {
 
   function items() {
     const s = shell.state, q = parseLevelQuery($('#lib-search', tools).value), check = $('#lib-check', tools).value, g = group();
+    const live = lv => liveBrief(shell.live?.(lv.name));
     const out = s.levels.filter(lv => {
       if (g && groupVal != null && String(lv.summary?.[g]) !== groupVal) return false;
-      if (check === 'noimg' ? hasImage(lv.sha) : check && checkState(s, lv.name) !== check) return false;
+      if (check === 'live') {
+        if (!['bad', 'warn'].includes(live(lv)?.flag)) return false;
+      } else if (check === 'noimg' ? hasImage(lv.sha) : check && checkState(s, lv.name) !== check) return false;
       return q.empty || queryMatches(q, lv.level, `${shell.game.searchText?.(lv.summary || {}) || ''} ${lv.author || ''}`);
     });
     if (sort === 'num-desc') out.reverse();
     if (sort === 'recent') out.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+    if (sort === 'fw') out.sort((a, b) => (live(a)?.x.firstWinRate ?? 2) - (live(b)?.x.firstWinRate ?? 2));
     return out;
   }
 
@@ -103,8 +110,10 @@ export function mountLibrary(shell, root, tools) {
   function card(lv, color, g) {
     const st = checkState(shell.state, lv.name);
     const sum = summaryPairs(lv.summary).filter(([k]) => k !== g).slice(0, 4).map(([k, v]) => `${k} ${v}`).join(' · ');
-    return `<li data-name="${esc(lv.name)}" class="${picked.has(lv.name) ? 'picked' : ''} ${lv.name === focus ? 'focus' : ''}">
+    const live = liveBrief(shell.live?.(lv.name));
+    return `<li data-name="${esc(lv.name)}" class="${picked.has(lv.name) ? 'picked' : ''} ${lv.name === focus ? 'focus' : ''} ${live?.flag ? `live-${live.flag}` : ''}">
       <div class="thumb" data-sha="${esc(lv.sha)}"><span class="ph">${esc(lv.name)}</span></div>
+      ${live ? `<div class="lv-live ${live.flag}" title="Người chơi thật (BI)${live.flag === 'stale' ? ', đo trên bản cũ' : ''}">${esc(live.text)}</div>` : ''}
       <div class="c-head">${st ? `<span class="dot ${st}" title="${esc(CHECK_LABEL[st])}"></span>` : ''}<b>#${esc(lv.name)}</b>
         ${g && lv.summary?.[g] != null ? `<span class="gchip" style="--c:${color(lv.summary[g])}">${esc(lv.summary[g])}</span>` : ''}
         ${lv.lock ? `<span title="${esc(shortUser(lv.lock.holder))} đang sửa">🔒</span>` : ''}</div>
@@ -119,6 +128,8 @@ export function mountLibrary(shell, root, tools) {
     if (!lv) return;
     detail.innerHTML = detailHtml(shell, lv);
     fillThumbs(detail, shell.state.pack, [lv], thumbOpts()).catch(() => {});
+    const info = $('[data-level-info]', detail);
+    if (info) shell.fillLevelInfo?.(info, lv.name);
   }
 
   function renderSelbar() {
@@ -150,6 +161,9 @@ export function mountLibrary(shell, root, tools) {
     for (const b of tools.querySelectorAll('[data-size]')) b.classList.toggle('active', b.dataset.size === size);
     $('#lib-capture', tools).hidden = !(shell.features().thumbs && shell.features().webgame);
     $('#lib-check option[value="noimg"]', tools).hidden = !shell.features().thumbs;
+    const hasLive = !!Object.keys(s.live?.levels || {}).length;
+    $('#lib-check option[value="live"]', tools).hidden = !hasLive;
+    $('#lib-sort option[value="fw"]', tools).hidden = !hasLive;
     grid.dataset.size = size;
     const list = items();
     const bad = s.checked?.pack === s.pack ? s.invalid.size : null;

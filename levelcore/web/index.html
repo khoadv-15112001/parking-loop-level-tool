@@ -57,7 +57,8 @@
       <div class="pack-ctl">
         <select id="pack-select" title="Bộ level đang mở"></select>
         <button id="btn-new-pack" class="icon" title="Tạo bộ mới">＋</button>
-        <button id="btn-pack-menu" class="icon" title="Cài đặt bộ: tên, nền tảng, nhóm, production, lưu trữ">⚙</button>
+        <button id="btn-packs" class="icon" title="Quản lý bộ: mã bộ, trạng thái và duyệt, người phụ trách, nơi đang chạy, version" hidden>☰</button>
+        <button id="btn-pack-menu" class="icon" title="Cài đặt bộ: tên, nền tảng, nhóm, mục đích">⚙</button>
         <button id="btn-pack-link" class="icon" title="Copy link bộ này: người nhận mở thẳng đúng bộ">🔗</button>
         <button id="btn-hub-sync" class="icon" title="Cập nhật từ Level Hub: tải lại toàn bộ level của bộ này từ BI" hidden>↻</button>
       </div>
@@ -144,6 +145,7 @@
                 <div class="col-scroll">
                   <div id="game-form"></div>
                   <section id="valid-card" class="card"><h3>Kiểm định</h3><div id="validation" class="validation"></div></section>
+                  <section id="info-card" class="card" hidden><h3>Bộ khác &amp; người chơi</h3><div id="level-info" class="level-info"></div></section>
                 </div>
                 <div class="grip" data-pref="formW"></div>
               </div>

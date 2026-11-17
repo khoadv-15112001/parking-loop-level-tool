@@ -222,6 +222,10 @@ core dùng mặc định ở cột cuối.
 | `hubLayout` | `(level) → string` | cột `layout` của Level Hub | `""` |
 | `fields` | mảng `{path, label, type, options?, min?, max?, step?, hint?}` | form tab Tổng quan (vỏ của core) | không có form |
 | `thumbnail` | `(level) → string` SVG, chỉ chạy trên trình duyệt | ảnh ở lưới level khi chưa có ảnh chụp từ bản game | không có ảnh |
+| `suggestFromStats` | `(level, stats) → [{text}]`; `stats` là số liệu BI theo nền tảng (`firstWinRate`, `attemptsPerUser`, `drop`, `loss`…) | thẻ "Bộ khác & người chơi" (chỉ server Node) | không gợi ý |
+
+Khoá nội dung của level (tìm bộ dùng cùng level, gắn số liệu BI) là sha256 của level sau `setLevelNumber(level, 0)`:
+game có số level trong raw nên khai `setLevelNumber` để hai level chỉ khác số được coi là một.
 
 `fields`: `path` là mảng khoá / chỉ số (`['settings', 'time']`, `['goals', 0, 'count']`) hoặc chuỗi có dấu chấm
 (`'time'`, `'goals.0.count'`); `type` là `number`, `text`,

@@ -9,6 +9,7 @@ import {
 } from './levelhub_bi.mjs';
 import { openLevelHub } from './levelhub.mjs';
 import { mountPackPicker } from './packpicker.mjs';
+import { fillLevelInfo, openPacks, STATUS_LABEL } from './packs.mjs';
 import { packEntry, packLink, remoteEntry } from './packsearch.mjs';
 import { diffPaths, renderFields } from './fields.mjs';
 import { parseLevelQuery, queryMatches } from './query.mjs';
@@ -58,6 +59,7 @@ const state = {
   tab: 'overview',
   hover: null,
   highlight: null,
+  live: null,           // số liệu người chơi (BI) của bộ đang mở: {levels: {name: {Android, iOS}}}
 };
 
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -84,7 +86,7 @@ function setFocus(on) {
 }
 const focused = () => !layout().list;
 const packInfo = () => state.packs.find(p => p.name === state.pack);
-const packReadOnly = () => { const p = packInfo(); return !p || p.archived || p.production; };
+const packReadOnly = () => { const p = packInfo(); return !p || p.archived || p.production || p.status === 'review'; };
 
 // ───────────────────────────── màn ─────────────────────────────
 
@@ -109,6 +111,16 @@ const shell = {
   afterReorder: async () => {
     await loadLevels();
     if (state.sel) await openLevel(state.sel, { force: true });
+  },
+  live: name => state.live?.levels?.[name] || null,
+  fillLevelInfo: (el, name) => fillLevelInfo(el, shell, state.pack, String(name)).catch(() => {}),
+  openPack: name => loadPacks(name),
+  reloadPacks: () => reloadPacks(),
+  openLevelIn: async (pack, name) => {
+    if (pack !== state.pack) await loadPacks(pack);
+    if (state.pack !== pack) return;
+    setView('level');
+    await openLevel(String(name));
   },
 };
 
@@ -248,6 +260,7 @@ async function boot() {
   configureKeymap({ storagePrefix: game.storagePrefix, scopes: game.shortcutScopes || [], actions: game.shortcuts || [] });
   bridgeMouseButtons();
   $('#btn-trash').hidden = !features().trash;
+  $('#btn-packs').hidden = !features().packflow;
   $('#btn-admin').hidden = !(features().admin && state.me.admin);
   $('#btn-share').hidden = !(features().share && features().webgame);
   showNotice(state.me.notice);
@@ -335,11 +348,36 @@ async function loadPacks(prefer) {
   }
 }
 
+/** Tải lại danh sách bộ, giữ bộ đang mở (Quản lý bộ đổi trạng thái, bàn giao, version). */
+async function reloadPacks() {
+  state.packs = await api.packs();
+  renderCounts();
+  if (!packInfo()) return loadPacks();
+  renderPackSelect();
+  const ro = packReadOnly();
+  $('#btn-new-level').disabled = ro;
+  $('#btn-import').disabled = ro;
+  if (state.sel) renderPanel();
+  renderView();
+  return null;
+}
+
+/** Số liệu người chơi (BI) của bộ đang mở, gắn theo nội dung level (server Node). */
+async function loadLive() {
+  const pack = state.pack;
+  const live = features().packflow ? await api.packLive(pack).catch(() => null) : null;
+  if (pack !== state.pack) return;
+  state.live = live;
+  renderView();
+}
+
+const statusNote = p => (p.status === 'review' ? ' (chờ duyệt)' : p.status === 'live' || (!p.status && p.production) ? ' (production)' : '');
+
 /** Ô chọn bộ: nhóm "Bộ local" và nhóm "Level Hub" (bộ đã mở từ BI + bộ trên BI chưa mở, value "hub:<id>"). */
 function renderPackSelect(keep = state.pack) {
   const visible = state.packs.filter(p => !p.archived || p.name === keep);
-  const opt = p => `<option value="${esc(p.name)}">${esc(p.group && !hubIdOf(p) ? `${p.group} / ` : '')}${esc(p.name)}`
-    + `${p.production ? ' (production)' : ''}${p.archived ? ' (lưu trữ)' : ''} — ${p.level_count}</option>`;
+  const opt = p => `<option value="${esc(p.name)}">${esc(p.code ? `${p.code} · ` : '')}${esc(p.group && !hubIdOf(p) ? `${p.group} / ` : '')}${esc(p.name)}`
+    + `${esc(statusNote(p))}${p.archived ? ' (lưu trữ)' : ''} — ${p.level_count}</option>`;
   const local = visible.filter(p => !hubIdOf(p)), hub = visible.filter(p => hubIdOf(p));
   let html = `<optgroup label="Bộ local">${local.map(opt).join('')}</optgroup>`;
   if (state.bi?.configured || hub.length) {
@@ -431,6 +469,7 @@ async function selectPack(name) {
   state.checked = null;
   state.invalid = new Map();
   state.warned = new Map();
+  state.live = null;
   localStorage.setItem(PACK_KEY, name);
   history.replaceState(history.state, '', packLink(location.href, name));
   closeLevel();
@@ -439,8 +478,10 @@ async function selectPack(name) {
   $('#btn-new-level').disabled = packReadOnly();
   $('#btn-import').disabled = packReadOnly();
   $('#btn-hub-sync').hidden = !hubIdOf(p) || !state.bi?.configured;
-  if (p?.production) toast(`Bộ ${name} là production: chỉ nhận level promote từ bộ khác.`);
+  if (p?.status === 'review') toast(`Bộ ${name} đang chờ duyệt: chỉ xem, trả về Nháp ở Quản lý bộ để sửa.`);
+  else if (p?.production) toast(`Bộ ${name} là production: chỉ nhận level promote từ bộ khác.`);
   checkPack().catch(() => {});   // chạy nền: chấm trạng thái ở danh sách, Thư viện, Tổng quan bộ
+  loadLive().catch(() => {});
 }
 
 async function loadLevels() {
@@ -566,7 +607,15 @@ async function openLevel(name, { force = false } = {}) {
   $(`#level-list li[data-name="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'nearest' });
   renderPanel();
   if (state.tab === 'history') renderHistory();
+  renderLevelInfo();
   showInGame('preview').catch(e => toast(e.message, 'err'));   // mở level là xem luôn bằng game thật
+}
+
+/** Thẻ "Bộ khác & người chơi" ở màn Level: bộ cùng nội dung, bộ giữ bản cũ, số liệu BI. */
+function renderLevelInfo() {
+  const card = $('#info-card');
+  card.hidden = !features().packflow || !state.sel;
+  if (!card.hidden) shell.fillLevelInfo($('#level-info'), state.sel);
 }
 
 /** ↺ Hoàn tác: bỏ mọi thay đổi chưa lưu, bản nháp trở về bản đã lưu (state.cur); vẫn giữ khoá sửa để sửa tiếp. */
@@ -781,6 +830,7 @@ function applySaved(res) {
   noteCheck(state.sel, game.validateLevel(state.draft, { levelNo: Number(state.sel) }));
   toast(res.unchanged ? 'Không có gì thay đổi' : `Đã lưu r${res.rev}${res.changes?.length ? `: ${res.changes.slice(0, 3).join('; ')}` : ''}`, 'ok');
   renderPanel();
+  if (!res.unchanged) renderLevelInfo();
   scheduleReload();
 }
 
@@ -1068,17 +1118,23 @@ function setTab(tab) {
 
 // ───────────────────────────── bộ: thao tác ─────────────────────────────
 
+const purposeOptions = (value = '') => `<option value="">(chưa đặt)</option>${(state.me?.pack_purposes || []).map(x =>
+  `<option value="${esc(x.key)}" ${x.key === value ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}`;
+
 async function newPack() {
+  const flow = features().packflow;
   const html = `<div class="grid2"><label>Tên bộ<input id="np-name" placeholder="vd: tuning_oct"></label>
     <label>Nền tảng<select id="np-platform"><option>android</option><option>ios</option><option>both</option></select></label>
-    <label>Nhóm<input id="np-group" placeholder="(tuỳ chọn)"></label></div>
-    <label>Mô tả<input id="np-desc"></label>`;
+    <label>Nhóm<input id="np-group" placeholder="(tuỳ chọn)"></label>
+    ${flow ? `<label>Mục đích<select id="np-purpose">${purposeOptions()}</select></label>` : ''}</div>
+    <label>Mô tả<input id="np-desc"></label>
+    ${flow ? '<p class="muted small">Bộ mới có mã cố định do tool sinh, bắt đầu ở trạng thái Nháp, bạn là người phụ trách.</p>' : ''}`;
   const name = await openDialog({
     title: 'Bộ level mới', html, actions: [{ label: 'Huỷ', value: null }, {
       label: 'Tạo', primary: true, onClick: async dlg => {
         const n = $('#np-name', dlg).value.trim();
         await api.createPack(n, { platform: $('#np-platform', dlg).value, group: $('#np-group', dlg).value,
-          description: $('#np-desc', dlg).value });
+          description: $('#np-desc', dlg).value, ...(flow ? { purpose: $('#np-purpose', dlg).value } : {}) });
         return n;
       },
     }],
@@ -1089,21 +1145,33 @@ async function newPack() {
 async function packMenu() {
   const p = packInfo();
   if (!p) return;
+  const flow = features().packflow;
+  const flags = flow
+    ? `<label>Mục đích<select id="pm-purpose">${purposeOptions(p.purpose)}</select></label>
+      <p class="small">Mã <b>${esc(p.code)}</b> · ${esc(STATUS_LABEL[p.status] || '')} · phụ trách ${esc(shortUser(p.owner) || '–')}
+        <button id="pm-manage" type="button" title="Gửi duyệt, Live, lưu trữ, bàn giao, version">Trạng thái, bàn giao, version…</button></p>`
+    : `<label class="check"><input id="pm-prod" type="checkbox" ${p.production ? 'checked' : ''} ${can('production') ? '' : 'disabled'}> Production</label>
+    <label class="check"><input id="pm-arch" type="checkbox" ${p.archived ? 'checked' : ''} ${can('archive') ? '' : 'disabled'}> Lưu trữ (chỉ đọc)</label>`;
   const html = `<p class="muted small">Tạo bởi ${esc(shortUser(p.created_by))} · ${esc(fmtTime(p.created_at))} · ${esc(p.level_count)} level</p>
     <div class="grid2"><label>Đổi tên<input id="pm-rename" value="${esc(p.name)}"></label>
     <label>Nền tảng<select id="pm-platform">${['android', 'ios', 'both'].map(x => `<option ${x === p.platform ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     <label>Nhóm<input id="pm-group" value="${esc(p.group)}"></label>
-    <label class="check"><input id="pm-prod" type="checkbox" ${p.production ? 'checked' : ''} ${can('production') ? '' : 'disabled'}> Production</label>
-    <label class="check"><input id="pm-arch" type="checkbox" ${p.archived ? 'checked' : ''} ${can('archive') ? '' : 'disabled'}> Lưu trữ (chỉ đọc)</label></div>
-    ${features().trash && !p.archived ? '<label>Lý do lưu trữ (bắt buộc khi lưu trữ; bộ lưu trữ bị xoá hẳn sau số ngày ở Thùng rác)<input id="pm-reason" maxlength="300"></label>' : ''}
+    ${flags}</div>
+    ${!flow && features().trash && !p.archived ? '<label>Lý do lưu trữ (bắt buộc khi lưu trữ; bộ lưu trữ bị xoá hẳn sau số ngày ở Thùng rác)<input id="pm-reason" maxlength="300"></label>' : ''}
     <label>Mô tả<input id="pm-desc" value="${esc(p.description)}"></label>`;
   const res = await openDialog({
-    title: `Bộ ${p.name}`, html, actions: [{ label: 'Huỷ', value: null }, {
+    title: `Bộ ${p.name}`, html,
+    onOpen: (dlg, close) => $('#pm-manage', dlg)?.addEventListener('click', () => {
+      close(null);
+      openPacks(shell, { pack: p.name }).catch(e => toast(e.message, 'err'));
+    }),
+    actions: [{ label: 'Huỷ', value: null }, {
       label: 'Lưu', primary: true, onClick: async dlg => {
         const patch = { platform: $('#pm-platform', dlg).value, group: $('#pm-group', dlg).value,
           description: $('#pm-desc', dlg).value };
-        if (can('production')) patch.production = $('#pm-prod', dlg).checked;
-        if (can('archive')) patch.archived = $('#pm-arch', dlg).checked;
+        if (flow) patch.purpose = $('#pm-purpose', dlg).value;
+        if (!flow && can('production')) patch.production = $('#pm-prod', dlg).checked;
+        if (!flow && can('archive')) patch.archived = $('#pm-arch', dlg).checked;
         if (patch.archived && !p.archived && features().trash) {
           patch.archive_reason = $('#pm-reason', dlg)?.value.trim() || '';
           if (patch.archive_reason.length < 3) throw new Error('Ghi lý do lưu trữ bộ');
@@ -1230,6 +1298,9 @@ function palette() {
       cmd('Lệnh', 'Thùng rác…', () => $('#btn-trash').click(), { words: 'trash khoi phuc da xoa', hidden: () => !features().trash }),
       cmd('Lệnh', 'Tạo bộ mới…', () => newPack(), { words: 'pack' }),
       cmd('Lệnh', 'Cài đặt bộ…', () => packMenu(), { words: 'pack doi ten production luu tru' }),
+      cmd('Lệnh', 'Quản lý bộ…', () => openPacks(shell), { words: 'pack ma trang thai duyet live ban giao version', hidden: () => !features().packflow }),
+      cmd('Lệnh', 'Bộ này: duyệt, bàn giao, version…', () => openPacks(shell, { pack: state.pack }),
+        { words: 'gui duyet ban giao version khoi phuc so sanh nhan ban', hidden: () => !features().packflow }),
       cmd('Lệnh', 'Bản game WebGL…', () => openBuilds(), { words: 'build unity', hidden: () => !(features().webgame && can('gameBuilds')) }),
       cmd('Lệnh', 'Quản trị…', () => openAdmin(), { words: 'admin quyen', hidden: () => $('#btn-admin').hidden }),
       cmd('Lệnh', 'Phím tắt…', () => showShortcuts(), { key: 'global.shortcuts', words: 'keymap' }),
@@ -1290,8 +1361,13 @@ function onEvent(type, d) {
     api.me().then(me => { state.me = me; }).catch(() => {});
     return;
   }
+  if (type === 'live.synced') {
+    loadLive().catch(() => {});
+    return;
+  }
   if (type.startsWith('pack.') && type !== 'pack.imported') {
-    loadPacks(type === 'pack.renamed' && d.from === state.pack ? d.to : state.pack).catch(() => {});
+    if (type === 'pack.renamed' && d.from === state.pack) loadPacks(d.to).catch(() => {});
+    else reloadPacks().catch(() => {});
     return;
   }
   if (d.pack !== state.pack) return;
@@ -1326,6 +1402,7 @@ function wire() {
   $('#btn-new-pack').addEventListener('click', newPack);
   $('#btn-pack-menu').addEventListener('click', packMenu);
   $('#btn-pack-link').addEventListener('click', copyPackLink);
+  $('#btn-packs').addEventListener('click', () => openPacks(shell).catch(e => toast(e.message, 'err')));
   $('#btn-import').addEventListener('click', () => $('#file-import').click());
   $('#file-import').addEventListener('change', e => { importFile(e.target.files[0]); e.target.value = ''; });
   $('#btn-export').addEventListener('click', async () => downloadResponse(await api.exportPack(state.pack), `${state.pack}.zip`));

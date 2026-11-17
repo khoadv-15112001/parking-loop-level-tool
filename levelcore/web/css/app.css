@@ -446,6 +446,62 @@ ul.plays li { cursor: pointer; }
 ul.plays li:hover { text-decoration: underline; }
 table.events code { white-space: pre-wrap; word-break: break-all; }
 
+/* ───── Quản lý bộ, so sánh, bộ khác & người chơi ───── */
+.chip.muted { color: var(--lc-muted); }
+.pm { display: flex; flex-direction: column; gap: 8px; min-height: 50vh; }
+.pm-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pm-tools input[type="search"] { min-width: 240px; flex: 1; }
+.pm-scroll { overflow: auto; max-height: 62vh; }
+.pm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pm-table th { position: sticky; top: 0; background: var(--lc-surface); text-align: left; font-size: 12px; color: var(--lc-muted); font-weight: 600; }
+.pm-table th, .pm-table td { padding: 5px 8px; border-bottom: 1px solid var(--lc-surface-2); vertical-align: top; }
+.pm-table td.num, .pm-table th.num { text-align: right; }
+.pm-table tbody tr[data-pack] { cursor: pointer; }
+.pm-table tbody tr[data-pack]:hover { background: var(--lc-surface-2); }
+.pm-table tr.current td:first-child { box-shadow: inset 3px 0 var(--lc-accent); }
+.pm-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pm-head h4 { margin: 0; font-size: 15px; }
+.pm-note { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--lc-surface-2); font-size: 13px; }
+.pm-note.warn { color: var(--lc-warn); }
+.pm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pm-actions:empty { display: none; }
+.pm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.pm-grid .card { display: flex; flex-direction: column; gap: 6px; }
+.pm-grid h3 { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.pm-grid textarea { resize: vertical; }
+.pm-versions, .pm-handovers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow: auto; }
+.pm-versions li { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-bottom: 1px solid var(--lc-surface-2); }
+.pm-vact { display: flex; gap: 6px; flex-wrap: wrap; }
+.pm-vact button { font-size: 12px; padding: 2px 8px; }
+.df-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 64vh; overflow: auto; }
+.df-list li { display: grid; grid-template-columns: 56px 110px minmax(0, 1fr) 20px minmax(0, 1fr); gap: 8px; align-items: center;
+  padding: 6px; border: 1px solid var(--lc-border); border-radius: 8px; }
+.df-side { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.df-side .thumb { width: 96px; flex: none; }
+.df-side.empty { justify-content: center; }
+.df-arrow { color: var(--lc-muted); text-align: center; }
+.level-info { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.level-info:empty { display: none; }
+.li-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.li-go { cursor: pointer; background: var(--lc-surface-2); border: 1px solid var(--lc-border); }
+.li-live { border-left: 3px solid var(--lc-border); padding-left: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.li-live.warn { border-left-color: var(--lc-warn); }
+.li-live.bad { border-left-color: var(--lc-err); }
+.li-live.stale { opacity: .75; }
+.li-live .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.li-live .stat small { font-size: 10px; color: var(--lc-muted); }
+.li-suggest { margin: 0; padding-left: 18px; }
+.lv-live { font-size: 11px; color: var(--lc-muted); }
+.lv-live.warn { color: var(--lc-warn); }
+.lv-live.bad { color: var(--lc-err); font-weight: 600; }
+.lv-live.stale { text-decoration: line-through; }
+.cards > li.live-warn { border-color: var(--lc-warn); box-shadow: 0 0 0 1px var(--lc-warn); }
+.cards > li.live-bad { border-color: var(--lc-err); box-shadow: 0 0 0 1px var(--lc-err); }
+.ord-table tr.live-warn td.slot { box-shadow: inset -3px 0 var(--lc-warn); }
+.ord-table tr.live-bad td.slot { box-shadow: inset -3px 0 var(--lc-err); }
+.ord-table .lv-live { margin-left: 6px; }
+@media (max-width: 1100px) { .pm-grid { grid-template-columns: 1fr; } .df-list li { grid-template-columns: 48px 1fr; } .df-arrow { display: none; } }
+
 /* ───── màn hẹp ───── */
 @media (max-width: 1350px) {
   .topbar .lb { display: none; }

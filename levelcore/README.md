@@ -205,8 +205,13 @@ node --test levelcore/node/tests/*.test.mjs                   # riêng server No
 | `SESSION_SECRET` | ngẫu nhiên mỗi lần chạy | bắt buộc khi deploy |
 | `CI_TOKEN`, `CI_BRANCH`, `CI_PACK` | tắt / mọi nhánh / bộ mặc định đầu | nhận player + level từ Jenkins (hợp đồng CI v1) |
 | `BI_ENV`, `BI_API_URL`, `BI_APP_ID`, `BI_APP_ID_IOS`, `BI_FIREBASE_API_KEY/_AUTH_DOMAIN/_PROJECT_ID/_APP_ID` | | BI Level Hub + đăng nhập Google |
+| `BI_SERVICE_ACCOUNT_KEY` (hoặc `BI_KEY_FILE`) | không tiền tố cũng được (BI cấp) | số liệu người chơi theo level (chỉ server Node), cần cả `BI_API_URL` |
 
-Không tiền tố: `VL_SSO_SECRET`; BI Center: `SBP_SQLITE_PATH`, `SBP_TOOL_URL`, `SBP_DATA_DIR`, `SBP_VERSION`.
+Không tiền tố: `VL_SSO_SECRET`, `BI_SERVICE_ACCOUNT_KEY`; BI Center: `SBP_SQLITE_PATH`, `SBP_TOOL_URL`, `SBP_DATA_DIR`, `SBP_VERSION`.
+
+Quản lý bộ (server Node): mã bộ `<ACRONYM>-S<NN>` lấy acronym từ `levelhub.acronym` (đổi bằng manifest `packCodePrefix`), mục
+đích mặc định Main / Daily / AB test / Event (đổi bằng `packPurposes: [{key, label}]`). Trạng thái Live = cờ `production`,
+Lưu trữ = `archived`; duyệt bản nháp nhân bản từ bộ Live sẽ thay nội dung bộ Live đó và ghi một version.
 
 ## Tools
 

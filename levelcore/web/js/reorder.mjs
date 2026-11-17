@@ -6,6 +6,7 @@ import { api } from './api.mjs';
 import { fillThumbs } from './gallery.mjs';
 import { detailHtml, summaryPairs, wireDetail } from './library.mjs';
 import { defaultGroup, groupColors, lineChart, numericKeys } from './overview.mjs';
+import { liveBrief } from './packs.mjs';
 import { $, esc, toast } from './ui.mjs';
 
 /** Chuyển thứ tự đã áp thành thứ tự đưa các level về chỗ cũ (dùng cho Hoàn tác lần xếp). */
@@ -143,10 +144,12 @@ export function mountOrder(shell, root, tools) {
         if (g && k === g && v != null) return `<td><span class="gchip" style="--c:${color(v)}">${esc(v)}</span></td>`;
         return `<td>${v == null || typeof v === 'object' ? '' : esc(v)}</td>`;
       }).join('');
-      return `<tr data-name="${esc(n)}" draggable="${!ro && !pinned.has(n)}" class="${picked.has(n) ? 'sel' : ''} ${mv ? 'moved' : ''} ${n === focus ? 'focus' : ''}">
+      const live = liveBrief(shell.live?.(n));
+      return `<tr data-name="${esc(n)}" draggable="${!ro && !pinned.has(n)}" class="${picked.has(n) ? 'sel' : ''} ${mv ? 'moved' : ''} ${n === focus ? 'focus' : ''} ${live?.flag ? `live-${live.flag}` : ''}">
         <td class="grip">${ro || pinned.has(n) ? '' : '⋮⋮'}</td><td class="slot">${esc(names[i])}</td>
         ${thumbs ? `<td><div class="thumb sm" data-sha="${esc(lv.sha || '')}"></div></td>` : ''}
-        <td class="lv" ${mv ? `title="Level ${esc(n)} sẽ thành số ${esc(names[i])}"` : ''}>Level ${esc(n)}${mv ? ` <span class="from">→ ${esc(names[i])}</span>` : ''}${lv.lock ? ' 🔒' : ''}</td>${cells}
+        <td class="lv" ${mv ? `title="Level ${esc(n)} sẽ thành số ${esc(names[i])}"` : ''}>Level ${esc(n)}${mv ? ` <span class="from">→ ${esc(names[i])}</span>` : ''}${lv.lock ? ' 🔒' : ''}
+          ${live ? `<span class="lv-live ${live.flag}" title="Người chơi thật (BI): ${esc(live.text)}">${esc(live.text)}</span>` : ''}</td>${cells}
         <td class="pin">${ro ? (pinned.has(n) ? '📌' : '') : `<button data-pin class="icon" title="Ghim slot: level này đứng yên khi các level khác dời">${pinned.has(n) ? '📌' : '·'}</button>`}</td></tr>`;
     }).join('') || `<tr><td colspan="9" class="muted">Bộ chưa có level.</td></tr>`;
     if (thumbs) fillThumbs(tbody, s.pack, s.levels, { thumbs: shell.features().thumbs === true, thumbnail: shell.game.thumbnail || null }).catch(() => {});
@@ -159,6 +162,8 @@ export function mountOrder(shell, root, tools) {
     if (lv) {
       detail.innerHTML = detailHtml(shell, lv);
       fillThumbs(detail, shell.state.pack, [lv], { thumbs: shell.features().thumbs === true, thumbnail: shell.game.thumbnail || null }).catch(() => {});
+      const info = $('[data-level-info]', detail);
+      if (info) shell.fillLevelInfo?.(info, lv.name);
     }
     selbar.hidden = !picked.size || !!readOnly();
     if (!selbar.hidden) {
