@@ -20,7 +20,7 @@ Người đọc là Dev Game khi nâng core. Quy tắc viết: [`AGENTS.md`](AGE
 - Quản trị Node: sao lưu nén, tối đa 7 bản / 200 MB; thùng rác, quyền, phím tắt và bố cục tự chỉnh.
 
 ### Thay đổi
-- Tìm level theo số, dải `10-20`, danh sách `2,5,9` và chữ không dấu; form thuộc tính từ `fields` của game.
+- Tìm level theo số, dải `10-20`, `2,5,9`, chữ không dấu; ô chọn bộ tìm được, có tóm tắt, 🔗 link; form từ `fields`.
 - Lưu và nhập: xung đột có so sánh và "Lưu thành bản sao"; Nhập xem trước từng level trước khi ghi.
 - Giao diện mặc định như Sand Jam / AntLevel: thanh màn, hàng của bộ, thanh trạng thái, gợi ý phím; Lưu chỉ hiện khi sửa.
 - Đẩy lên BI: kiểm tên trùng, gợi ý version; lỗi 409/413 có gợi ý, mất phản hồi thì tìm lại bộ vừa tạo.

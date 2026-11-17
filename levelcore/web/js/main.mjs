@@ -5,9 +5,11 @@
 import { api, ApiError, devUser, downloadBlob, downloadResponse, session, setStoragePrefix } from './api.mjs';
 import { biSessionLogin } from './biauth.mjs';
 import {
-  groupId, groupName, hubIdOf, hubOptionText, listHubGroups, openLevelHubBrowser, syncHubPack,
+  groupId, groupName, groupStatus, hubIdOf, hubOptionText, listHubGroups, osOf, openLevelHubBrowser, syncHubPack,
 } from './levelhub_bi.mjs';
 import { openLevelHub } from './levelhub.mjs';
+import { mountPackPicker } from './packpicker.mjs';
+import { packEntry, packLink, remoteEntry } from './packsearch.mjs';
 import { diffPaths, renderFields } from './fields.mjs';
 import { parseLevelQuery, queryMatches } from './query.mjs';
 import { $, $$, confirmDialog, esc, fmtTime, openDialog, shortUser, toast } from './ui.mjs';
@@ -272,7 +274,7 @@ async function boot() {
   sync.startEvents();
   // Màn mở đầu: màn lần trước; lần đầu thì Level, hoặc Thư viện với game nhìn hình là nhận ra level (manifest listView: 'grid').
   state.view = VIEWS.includes(stored(VIEW_KEY)) ? stored(VIEW_KEY) : game.listView === 'grid' ? 'library' : 'level';
-  await loadPacks(localStorage.getItem(PACK_KEY));
+  await loadPacks(new URL(location.href).searchParams.get('pack') || localStorage.getItem(PACK_KEY));
   setView(state.view);
 }
 
@@ -351,7 +353,41 @@ function renderPackSelect(keep = state.pack) {
   const sel = $('#pack-select');
   sel.innerHTML = html;
   if (keep && visible.some(p => p.name === keep)) sel.value = keep;
+  packPicker().refresh();
   return visible;
+}
+
+/** Các mục của ô chọn bộ tìm được: cùng nội dung với <select> gốc, thêm tóm tắt từng bộ. */
+function packSections() {
+  const visible = state.packs.filter(p => !p.archived || p.name === state.pack);
+  const local = visible.filter(p => !hubIdOf(p)), hub = visible.filter(p => hubIdOf(p));
+  const sections = [{ title: 'Bộ local', entries: local.map(p => packEntry(p)) }];
+  if (state.bi?.configured || hub.length) {
+    const opened = new Set(hub.map(hubIdOf));
+    const remote = (state.hub || []).filter(g => !opened.has(String(groupId(g))));
+    sections.push({
+      title: `Level Hub (BI ${state.bi?.env || ''})`,
+      entries: [...hub.map(p => packEntry(p, { hub: true })),
+        ...remote.map(g => remoteEntry({ id: groupId(g), name: groupName(g), os: osOf(g), status: groupStatus(g) }))],
+      action: state.bi?.configured ? { value: 'hub:', label: state.hub ? '↻ Tải lại danh sách Level Hub…' : '⇩ Tải danh sách bộ trên Level Hub…' } : null,
+    });
+  }
+  return sections;
+}
+
+let packPickerInstance = null;
+const packPicker = () => (packPickerInstance ??= mountPackPicker($('#pack-select'), packSections));
+
+async function copyPackLink() {
+  if (!state.pack) return;
+  const url = packLink(location.href, state.pack);
+  try {
+    await navigator.clipboard.writeText(url);
+    toast(`Đã chép link bộ ${state.pack}`, 'ok');
+  } catch {
+    await openDialog({ title: 'Link bộ này', html: `<p class="muted small">Trình duyệt chặn chép tự động, chép link dưới đây.</p><input id="pack-link-url" readonly value="${esc(url)}">`,
+      onOpen: dlg => $('#pack-link-url', dlg).select() });
+  }
 }
 
 /** Chọn mục "hub:…" trong ô chọn bộ. Gọi ngay trong sự kiện change (biLogin có thể mở popup). */
@@ -396,6 +432,7 @@ async function selectPack(name) {
   state.invalid = new Map();
   state.warned = new Map();
   localStorage.setItem(PACK_KEY, name);
+  history.replaceState(history.state, '', packLink(location.href, name));
   closeLevel();
   await loadLevels();
   const p = packInfo();
@@ -416,6 +453,7 @@ async function loadLevels() {
     p.level_count = state.levels.length;
     const opt = [...$('#pack-select').options].find(o => o.value === p.name);
     if (opt) opt.textContent = opt.textContent.replace(/ — \d+$/, ` — ${p.level_count}`);
+    packPicker().refresh();
     renderCounts();
   }
   renderView();
@@ -1287,6 +1325,7 @@ function wire() {
   });
   $('#btn-new-pack').addEventListener('click', newPack);
   $('#btn-pack-menu').addEventListener('click', packMenu);
+  $('#btn-pack-link').addEventListener('click', copyPackLink);
   $('#btn-import').addEventListener('click', () => $('#file-import').click());
   $('#file-import').addEventListener('change', e => { importFile(e.target.files[0]); e.target.value = ''; });
   $('#btn-export').addEventListener('click', async () => downloadResponse(await api.exportPack(state.pack), `${state.pack}.zip`));

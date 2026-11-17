@@ -78,6 +78,21 @@ label.inline select, label.inline input { color: var(--lc-text); font-size: 13px
   border-bottom: 1px solid var(--lc-border); min-height: 42px; }
 .pack-ctl { display: flex; gap: 4px; align-items: center; flex: none; padding-right: 10px; margin-right: 4px; border-right: 1px solid var(--lc-border); }
 .pack-ctl select { max-width: 240px; min-width: 120px; font-weight: 600; }
+.pack-picker { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; min-width: 120px; font-weight: 600; }
+.pack-picker-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pack-pick { position: fixed; z-index: 1000; width: min(460px, calc(100vw - 16px)); display: flex; flex-direction: column;
+  background: var(--lc-surface); border: 1px solid var(--lc-border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+.pack-pick > input { margin: 8px; }
+.pack-pick-list { overflow: auto; max-height: min(600px, calc(100vh - 160px)); padding: 0 4px 4px; }
+.pack-pick-head { padding: 6px 10px 2px; font-size: 11px; color: var(--lc-muted); }
+.pack-pick-empty { padding: 10px 12px; }
+.pack-row { padding: 3px 10px; border-radius: 6px; cursor: pointer; line-height: 1.35; min-width: 0; }
+.pack-row.active { background: var(--lc-sel); }
+.pack-row.on b { color: var(--lc-accent); }
+.pack-row-name { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.pack-row-name b, .pack-row-facts { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pack-row-facts { font-size: 11px; }
+.pack-row-action { color: var(--lc-accent); }
 .ctx { display: flex; gap: 6px; align-items: center; flex: 1; min-width: 0; }
 .ctx > * { flex: none; }
 .ctx > .grow { flex: 1; }
@@ -401,6 +416,12 @@ svg.chart circle { cursor: pointer; }
 .webgame .wg-box { --screen-ratio: .5625; position: relative; overflow: hidden; aspect-ratio: var(--screen-ratio); width: min(100cqw, 100cqh * var(--screen-ratio)); }
 .webgame .wg-box.fill { aspect-ratio: auto; width: 100%; height: 100%; }
 .webgame iframe { width: 100%; height: 100%; border: 0; display: block; }
+.webgame .wg-box.fixed iframe { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; }
+.webgame .wg-head .wg-screen { flex: 0 1 auto; min-width: 0; max-width: 130px; }
+.gs-list { margin: 0 0 10px; padding-left: 18px; }
+.gs-list button { padding: 0 6px; }
+.gs-size { display: flex; align-items: flex-end; gap: 8px; }
+.gs-size label { flex: 1; }
 .webgame .wg-results { margin: 0; padding: 4px 10px 8px 26px; max-height: 120px; overflow: auto; }
 .webgame .wg-results:empty { display: none; }
 .webgame.min { top: auto; height: auto; }
@@ -416,12 +437,6 @@ svg.chart circle { cursor: pointer; }
 /* ───── link điện thoại, phím tắt, lượt chơi ───── */
 .share-out { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .share-out img.qr { width: 180px; height: 180px; image-rendering: pixelated; background: #fff; border-radius: 6px; }
-.webgame .wg-box.fixed iframe { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; }
-.webgame .wg-head .wg-screen { flex: 0 1 auto; min-width: 0; max-width: 130px; }
-.gs-list { margin: 0 0 10px; padding-left: 18px; }
-.gs-list button { padding: 0 6px; }
-.gs-size { display: flex; align-items: flex-end; gap: 8px; }
-.gs-size label { flex: 1; }
 .share-out input { width: 100%; }
 .share-out > div { flex: 1; min-width: 220px; display: grid; gap: 6px; }
 table.km kbd { font-size: 12px; padding: 1px 6px; }
@@ -435,7 +450,7 @@ table.events code { white-space: pre-wrap; word-break: break-all; }
 @media (max-width: 1350px) {
   .topbar .lb { display: none; }
   .palette-btn kbd { display: none; }
-  .pack-ctl select { max-width: 170px; }
+  .pack-ctl select, .pack-picker { max-width: 170px; }
 }
 @media (max-width: 1150px) {
   .ctxbar { flex-wrap: wrap; }

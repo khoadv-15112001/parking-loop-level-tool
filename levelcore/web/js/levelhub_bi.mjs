@@ -45,7 +45,7 @@ async function allPages(fetchPage) {
 export const HUB_GROUP = 'Level Hub';
 export const hubIdOf = p => /^levelhub:(\S+)/.exec(p?.description || '')?.[1] ?? null;
 export const hubOptionText = g => `${groupName(g)} · ${osOf(g)}${groupStatus(g) ? ` — ${groupStatus(g)}` : ''}`;
-export { groupId, groupName };
+export { groupId, groupName, groupStatus, osOf };
 
 /** Danh sách bộ trên Level Hub (biLogin trước tiên — có thể mở popup). */
 export async function listHubGroups() {
