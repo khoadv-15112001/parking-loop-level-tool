@@ -77,6 +77,10 @@ export class Housekeeping {
       if (this.db.get('SELECT 1 x FROM levels WHERE pack=? AND deleted=0 LIMIT 1', p.name)) this.write(`${p.name}.zip`, this.store.exportPack(p.name));
       this.db.write(() => {
         for (const lv of this.db.all('SELECT * FROM levels WHERE pack=?', p.name)) this.dropLevel(lv);
+        if (p.code) {
+          this.db.run('DELETE FROM pack_version_levels WHERE version_id IN (SELECT id FROM pack_versions WHERE code=?)', p.code);
+          this.db.run('DELETE FROM pack_versions WHERE code=?', p.code);
+        }
         this.db.run('DELETE FROM packs WHERE name=?', p.name);
         this.store.audit(user, 'pack.purge', p.name, null, null, { archived_at: iso(p.archived_at), reason: p.archive_reason });
       });
@@ -85,7 +89,8 @@ export class Housekeeping {
     this.db.write(() => {
       out.links = Number(this.db.run('DELETE FROM share_links WHERE expires_at<? OR revoked_at<?', now() - LINK_GRACE, now() - LINK_GRACE).changes);
       out.blobs = Number(this.db.run(`DELETE FROM blobs WHERE sha NOT IN (SELECT blob_sha FROM revisions WHERE blob_sha IS NOT NULL)
-        AND sha NOT IN (SELECT sha FROM plays WHERE sha IS NOT NULL) AND sha NOT IN (SELECT sha FROM share_links)`).changes);
+        AND sha NOT IN (SELECT sha FROM plays WHERE sha IS NOT NULL) AND sha NOT IN (SELECT sha FROM share_links)
+        AND sha NOT IN (SELECT sha FROM pack_version_levels)`).changes);
       out.thumbs = Number(this.db.run('DELETE FROM thumbs WHERE sha NOT IN (SELECT sha FROM blobs)').changes);
       if (out.levels || out.packs || out.blobs) this.store.audit(user, 'admin.housekeeping', null, null, null, out);
     });

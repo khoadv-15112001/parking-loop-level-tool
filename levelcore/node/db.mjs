@@ -50,10 +50,32 @@ CREATE TABLE IF NOT EXISTS share_links(
 CREATE TABLE IF NOT EXISTS thumbs(
   sha TEXT PRIMARY KEY, type TEXT NOT NULL, data BLOB NOT NULL, source TEXT NOT NULL,
   created_by TEXT NOT NULL, created_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS counters(name TEXT PRIMARY KEY, value INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS pack_versions(
+  id INTEGER PRIMARY KEY, code TEXT NOT NULL, no INTEGER NOT NULL, pack TEXT NOT NULL, kind TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '', author TEXT NOT NULL, reviewer TEXT, created_at REAL NOT NULL,
+  from_lv INTEGER, to_lv INTEGER, levels INTEGER NOT NULL, detail TEXT, UNIQUE(code, no));
+CREATE TABLE IF NOT EXISTS pack_version_levels(
+  version_id INTEGER NOT NULL REFERENCES pack_versions(id), level INTEGER NOT NULL, name TEXT NOT NULL,
+  rev INTEGER NOT NULL, sha TEXT NOT NULL, PRIMARY KEY(version_id, level));
+CREATE INDEX IF NOT EXISTS pack_version_levels_sha ON pack_version_levels(sha);
+CREATE TABLE IF NOT EXISTS live_runs(
+  id INTEGER PRIMARY KEY, at REAL NOT NULL, by TEXT NOT NULL, platform TEXT NOT NULL, pack TEXT, code TEXT,
+  start_date TEXT, end_date TEXT, status TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0, message TEXT);
+CREATE TABLE IF NOT EXISTS live_stats(
+  platform TEXT NOT NULL, slot INTEGER NOT NULL, code TEXT, pack TEXT, name TEXT, rev INTEGER, sha TEXT,
+  content_key TEXT, data TEXT NOT NULL, run_id INTEGER, PRIMARY KEY(platform, slot));
+CREATE INDEX IF NOT EXISTS live_stats_key ON live_stats(content_key);
 `;
 
 // Cột thêm sau khi DB đã chạy (DB do bản trước hoặc server Python tạo vẫn mở được): ALTER TABLE ADD COLUMN khi thiếu.
-const COLUMNS = [['packs', 'archived_at', 'REAL'], ['packs', 'archive_reason', 'TEXT']];
+const COLUMNS = [['packs', 'archived_at', 'REAL'], ['packs', 'archive_reason', 'TEXT'],
+  ['packs', 'code', 'TEXT'], ['packs', 'purpose', "TEXT NOT NULL DEFAULT ''"], ['packs', 'owner', 'TEXT'], ['packs', 'notes', 'TEXT'],
+  ['packs', 'deploy', 'TEXT'], ['packs', 'base', 'TEXT'], ['packs', 'review_by', 'TEXT'], ['packs', 'review_at', 'REAL'],
+  ['packs', 'review_note', 'TEXT'], ['packs', 'approved_by', 'TEXT'], ['packs', 'approved_at', 'REAL'],
+  ['levels', 'content_key', 'TEXT']];
+const INDEXES = ['CREATE UNIQUE INDEX IF NOT EXISTS packs_code ON packs(code)',
+  'CREATE INDEX IF NOT EXISTS levels_content ON levels(content_key)'];
 
 export class DB {
   constructor(file) {
@@ -68,6 +90,7 @@ export class DB {
       const have = this.db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === col);
       if (!have) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
     }
+    for (const sql of INDEXES) this.db.exec(sql);
     this.file = path.resolve(file);
     this.statements = new Map();
   }

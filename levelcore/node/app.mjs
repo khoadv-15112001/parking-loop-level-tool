@@ -14,6 +14,9 @@ import { Housekeeping } from './housekeeping.mjs';
 import { ApiError, parseJson, queryBool, readBody, Router, sendBytes, sendJson, serveFile } from './http.mjs';
 import * as levelhub from './levelhub.mjs';
 import { Links } from './links.mjs';
+import { LiveBi } from './livebi.mjs';
+import { PackFlow } from './packflow.mjs';
+import { checkNote, purposesOf } from './packmeta.mjs';
 import { Plays } from './plays.mjs';
 import { MAX_THUMB_BYTES, Thumbs } from './thumbs.mjs';
 import { iso, now, parseTime, Store } from './store.mjs';
@@ -60,6 +63,8 @@ export function createApp(game, s) {
   const plays = new Plays(db, store);
   const links = new Links(db, store, admin);
   const thumbs = new Thumbs(db, store);
+  const flow = new PackFlow(store, admin);
+  const live = new LiveBi(s, db, store, admin, broker);
   const housekeeping = new Housekeeping(db, store, admin, () => {
     const removed = builds.prune();
     ci.afterPrune(removed);
@@ -96,13 +101,14 @@ export function createApp(game, s) {
     format_version: s.formatVersion, rights: admin.rights(user), notice: admin.settings().notice,
     features: {
       levelhub: !!game.levelhub, bi: biConfigured, webgame: true,
-      plays: true, share: true, thumbs: true, reorder: true, trash: true, admin: true,
+      plays: true, share: true, thumbs: true, reorder: true, trash: true, admin: true, packflow: true, live: live.configured(),
     },
+    pack_purposes: purposesOf(game.manifest),
   }));
   api.add('GET', '/api/packs', () => store.listPacks());
   api.add('POST', '/api/packs', async ({ req, user }) => {
     const b = await objectBody(req);
-    return reply(201, store.createPack(user, b.name, b.description ?? '', b.platform ?? 'android', b.group ?? ''));
+    return reply(201, store.createPack(user, b.name, b.description ?? '', b.platform ?? 'android', b.group ?? '', { purpose: b.purpose ?? '' }));
   });
   api.add('PATCH', '/api/packs/:pack', async ({ req, user, params }) => {
     const b = await objectBody(req);
@@ -111,6 +117,35 @@ export function createApp(game, s) {
     return store.updatePack(user, params.pack, b);
   });
   api.add('POST', '/api/packs/:pack/rename', async ({ req, user, params }) => store.renamePack(user, params.pack, (await objectBody(req)).to));
+
+  // ----- Quản lý bộ: trạng thái, bàn giao, nhân bản, version, so sánh, level dùng ở đâu -----
+  api.add('POST', '/api/packs/:pack/status', async ({ req, user, params }) => {
+    const b = await objectBody(req);
+    return flow.setStatus(user, params.pack, b.to, { note: b.note ?? '' });
+  });
+  api.add('POST', '/api/packs/:pack/handover', async ({ req, user, params }) => flow.handover(user, params.pack, await objectBody(req)));
+  api.add('GET', '/api/packs/:pack/handovers', ({ params }) => flow.handovers(params.pack));
+  api.add('POST', '/api/packs/:pack/clone', async ({ req, user, params }) => reply(201, flow.clone(user, params.pack, await objectBody(req))));
+  api.add('GET', '/api/packs/:pack/versions', ({ params }) => flow.listVersions(params.pack));
+  api.add('POST', '/api/packs/:pack/versions', async ({ req, user, params }) => reply(201, flow.snapshot(user, params.pack, await objectBody(req))));
+  api.add('GET', '/api/packs/:pack/versions/:no', ({ params }) => flow.getVersion(params.pack, revParam(params.no)));
+  api.add('POST', '/api/packs/:pack/versions/:no/restore', async ({ req, user, params }) => (
+    flow.restore(user, params.pack, revParam(params.no), await objectBody(req))));
+  api.add('GET', '/api/diff', ({ url }) => flow.diff(url.searchParams.get('a'), url.searchParams.get('b')));
+  api.add('GET', '/api/packs/:pack/levels/:name/usage', ({ params }) => flow.usage(params.pack, params.name));
+  api.add('POST', '/api/packs/:pack/levels/:name/apply', async ({ req, user, params }) => {
+    const b = await objectBody(req);
+    return flow.apply(user, params.pack, params.name, b.targets, typeof b.message === 'string' ? b.message.slice(0, 200) : '');
+  });
+
+  // ----- Số liệu người chơi thật từ BI (service account chỉ đọc) -----
+  api.add('GET', '/api/live', () => live.status());
+  api.add('POST', '/api/live/sync', ({ user }) => {
+    admin.require(user, 'liveBi');
+    return live.start(user);
+  });
+  api.add('GET', '/api/packs/:pack/live', ({ params }) => live.packStats(params.pack));
+  api.add('GET', '/api/packs/:pack/levels/:name/live', ({ params }) => live.levelStats(params.pack, params.name));
 
   api.add('GET', '/api/packs/:pack/levels', ({ params, url }) => store.listLevels(params.pack, queryBool(url, 'include_deleted')));
   api.add('GET', '/api/packs/:pack/bundle', ({ params }) => store.bundle(params.pack));
@@ -256,6 +291,9 @@ export function createApp(game, s) {
     if (typeof description !== 'string' || description.length > 2000) throw new ApiError(400, 'Mô tả tối đa 2000 ký tự');
     if (description && description.length < bihub.MIN_DESCRIPTION) throw new ApiError(400, `Mô tả (nếu nhập) tối thiểu ${bihub.MIN_DESCRIPTION} ký tự`);
     if (!levelhub.joinGeo(lreq.geo)) throw new ApiError(400, 'Đẩy lên BI cần chọn Geo (tên bộ trên BI không được có phần Geo rỗng)');
+    const note = checkNote(body.note, { max: 500, what: 'Ghi chú version' });
+    const code = store.pack(params.pack).code;
+    const biDescription = description && code ? `[${code}] ${description}`.slice(0, 2000) : description;
     const appId = bihub.appForOs(s, lreq.os);
     let out;
     try {
@@ -274,7 +312,7 @@ export function createApp(game, s) {
     const started = Date.now() / 1000;
     let group, recovered = false;
     try {
-      group = await bihub.createGroup(s, token, biName, out.data, description, appId);
+      group = await bihub.createGroup(s, token, biName, out.data, biDescription, appId);
     } catch (e) {
       if (!(e instanceof bihub.BiError) || e.biStatus != null) throw bihub.asApiError(e, 'tạo bộ (asset-groups, quyền Create Asset Group)', appId);
       try {
@@ -290,11 +328,16 @@ export function createApp(game, s) {
       recovered = true;
     }
     const { summary } = out;
-    db.write(() => store.audit(user, 'levelhub.bi_upload', params.pack, null, null, {
-      zip: biName, env: s.biEnv, app: appId, group: group?.id ?? group?._id ?? group?.groupId ?? null, levels: summary.levelCount, missing: summary.missingTotal,
-      manifest: summary.manifest, newer: summary.newer, recovered,
-    }));
-    return { name: biName, group, levelCount: summary.levelCount, newer: summary.newer, recovered, checked_at: iso(Date.now() / 1000) };
+    const groupRef = group?.id ?? group?._id ?? group?.groupId ?? null;
+    const version = db.write(() => {
+      store.audit(user, 'levelhub.bi_upload', params.pack, null, null, {
+        zip: biName, env: s.biEnv, app: appId, group: groupRef, levels: summary.levelCount, missing: summary.missingTotal,
+        manifest: summary.manifest, newer: summary.newer, recovered, ...(note ? { note } : {}),
+      });
+      return flow.recordPush(user, params.pack, summary, lreq, { note, bi: { name: biName, group: groupRef, env: s.biEnv, app: appId } });
+    });
+    broker.publish('pack.version', { pack: params.pack, author: user, version });
+    return { name: biName, group, levelCount: summary.levelCount, newer: summary.newer, recovered, version, checked_at: iso(Date.now() / 1000) };
   });
 
   // ----- Bản game WebGL: bản đang dùng, bản chờ chọn, tải tay (admin) -----
@@ -580,8 +623,10 @@ export function createApp(game, s) {
   });
   server.on('close', () => {
     housekeeping.stop();
+    live.stop();
     db.close();
   });
   housekeeping.start();
-  return { server, store, broker, db, builds, ci };
+  live.schedule();
+  return { server, store, broker, db, builds, ci, live };
 }

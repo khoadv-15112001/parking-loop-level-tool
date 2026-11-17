@@ -3,27 +3,52 @@
 //   permissions  ai được làm từng việc: 'admin' | 'everyone'
 //   notice       dải thông báo chung {text, level}
 //   trashDays    số ngày giữ level đã xoá / bộ đã lưu trữ trước khi xoá hẳn; linkDays: hạn mặc định link chơi thử
+//   live         số liệu BI: bộ đang chạy theo nền tảng (mã bộ, rỗng = bộ Live Main), số ngày, ngưỡng cảnh báo
 // Mỗi lần lưu tăng `version`; lưu từ bản cũ thì 409 (hai admin cùng sửa).
 import fs from 'node:fs';
 import path from 'node:path';
 import { ApiError } from './http.mjs';
+import { LIVE_DEFAULTS, PLATFORMS } from './livebi.mjs';
 import { iso, now } from './store.mjs';
 import { storageRoots, storageUsage, requireStorage, maintainBackups, compressBackup, diskBytes } from './storage.mjs';
 
 export const ACTIONS = {
-  production: 'Bật / tắt bộ production',
+  production: 'Duyệt bộ, bật / tắt Live (production)',
   archive: 'Lưu trữ bộ, khôi phục bộ đã lưu trữ',
   breakLock: 'Phá khoá level của người khác',
   gameBuilds: 'Tải lên, chọn, xoá bản game WebGL',
   levelhubUpload: 'Đẩy bộ lên BI Level Hub',
   shareLinks: 'Tạo link chơi thử trên điện thoại',
   reorder: 'Xếp lại thứ tự level của bộ',
+  liveBi: 'Đồng bộ số liệu người chơi từ BI',
 };
 const DEFAULT_PERMISSIONS = {
   production: 'admin', archive: 'admin', breakLock: 'admin', gameBuilds: 'admin',
-  levelhubUpload: 'everyone', shareLinks: 'everyone', reorder: 'everyone',
+  levelhubUpload: 'everyone', shareLinks: 'everyone', reorder: 'everyone', liveBi: 'admin',
 };
-const DEFAULTS = { admins: [], permissions: DEFAULT_PERMISSIONS, notice: { text: '', level: 'info' }, trashDays: 30, linkDays: 14 };
+const DEFAULTS = { admins: [], permissions: DEFAULT_PERMISSIONS, notice: { text: '', level: 'info' }, trashDays: 30, linkDays: 14, live: LIVE_DEFAULTS };
+
+function cleanLive(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ApiError(400, 'live phải là object');
+  const out = structuredClone(LIVE_DEFAULTS);
+  for (const p of PLATFORMS) {
+    const v = value.platforms?.[p] ?? {};
+    if (typeof (v.pack ?? '') !== 'string' || String(v.pack ?? '').length > 40) throw new ApiError(400, `live.platforms.${p}.pack phải là mã bộ`);
+    const versions = v.versions ?? [];
+    if (!Array.isArray(versions) || versions.some(x => typeof x !== 'string' || x.length > 40) || versions.length > 20) {
+      throw new ApiError(400, `live.platforms.${p}.versions phải là danh sách bản app (tối đa 20)`);
+    }
+    out.platforms[p] = { pack: String(v.pack ?? '').trim(), versions: [...new Set(versions.map(x => x.trim()).filter(Boolean))] };
+  }
+  for (const [k, lo, hi, int] of [['days', 1, 90, true], ['minUsers', 1, 100000, true], ['hardWin', 0, 1, false], ['warnWin', 0, 1, false], ['warnDrop', 0, 1, false]]) {
+    const v = value[k] ?? LIVE_DEFAULTS[k];
+    if (typeof v !== 'number' || v < lo || v > hi || (int && !Number.isInteger(v))) throw new ApiError(400, `live.${k} phải trong khoảng ${lo}–${hi}`);
+    out[k] = v;
+  }
+  if (value.auto != null && typeof value.auto !== 'boolean') throw new ApiError(400, 'live.auto phải là true/false');
+  out.auto = value.auto ?? LIVE_DEFAULTS.auto;
+  return out;
+}
 const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const KEEP_BACKUPS = 7;
 const BACKUP_NAME = /^[\w.-]+-\d{8}-\d{6}\.db(?:\.gz)?$/;
@@ -54,6 +79,7 @@ export class Admin {
       } else if (r.key in DEFAULTS) out[r.key] = JSON.parse(r.value);
     }
     out.permissions = { ...DEFAULT_PERMISSIONS, ...out.permissions };
+    out.live = { ...structuredClone(LIVE_DEFAULTS), ...out.live, platforms: { ...structuredClone(LIVE_DEFAULTS.platforms), ...out.live?.platforms } };
     return out;
   }
 
@@ -79,6 +105,7 @@ export class Admin {
       if (text.length > 300) throw new ApiError(400, 'Thông báo tối đa 300 ký tự');
       clean.notice = { text, level: ['info', 'warn'].includes(patch.notice.level) ? patch.notice.level : 'info' };
     }
+    if (patch.live != null) clean.live = cleanLive(patch.live);
     for (const [k, lo, hi] of [['trashDays', 1, 365], ['linkDays', 1, 90]]) {
       if (patch[k] == null) continue;
       if (!Number.isInteger(patch[k]) || patch[k] < lo || patch[k] > hi) throw new ApiError(400, `${k} phải là số ngày ${lo}–${hi}`);

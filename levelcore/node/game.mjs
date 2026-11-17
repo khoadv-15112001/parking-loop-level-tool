@@ -55,5 +55,13 @@ export async function loadGame(manifestPath, repo) {
       const v = hook('setLevelNumber')?.(level, n);
       return isObject(v) ? v : level;
     },
+    suggest(level, stats) {
+      try {
+        const v = hook('suggestFromStats')?.(level, stats);
+        return Array.isArray(v) ? v.filter(x => x && typeof x.text === 'string').slice(0, 10).map(x => ({ text: x.text.slice(0, 200) })) : [];
+      } catch {
+        return [];
+      }
+    },
   };
 }

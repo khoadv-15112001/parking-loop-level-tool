@@ -5,9 +5,10 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { ApiError, stripBom } from './http.mjs';
+import { checkPurpose, cleanFields, codePrefix, contentKey, DEPLOY_KEYS, formatCode, NOTE_KEYS, statusOf } from './packmeta.mjs';
 import { createZip, readZip } from './zip.mjs';
 
-const PACK_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+export const PACK_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const NAME_RE = /^[1-9][0-9]{0,8}$/;
 const GROUP_MAX = 64;
 const PLATFORMS = ['android', 'ios', 'both'];
@@ -83,6 +84,7 @@ export class Store {
   writable(pack, op = 'edit') {
     const p = this.pack(pack);
     if (p.archived) throw new ApiError(403, `Bộ '${pack}' đã lưu trữ — bỏ lưu trữ để sửa`);
+    if (statusOf(p) === 'review') throw new ApiError(403, `Bộ '${pack}' đang chờ duyệt — trả về Nháp để sửa`);
     if (p.production && op !== 'copy' && op !== 'swap') {
       throw new ApiError(403, `Bộ '${pack}' là production: chỉ nhận level promote từ bộ khác (qua kiểm định) và đổi chỗ số level — không sửa trực tiếp`);
     }
@@ -168,9 +170,10 @@ export class Store {
     if (data && this.s.formatVersion != null && !(m && 'format' in m)) m = { ...(m || {}), format: this.s.formatVersion };
     this.db.run('INSERT INTO revisions(level_id,rev,blob_sha,author,created_at,kind,message,unlocked_edit,meta) VALUES(?,?,?,?,?,?,?,?,?)',
       lv.id, newRev, sha, user, t, kind, message || '', unlocked ? 1 : 0, m && Object.keys(m).length ? JSON.stringify(m) : null);
-    const summary = data ? JSON.stringify(this.game.summary(Store.decode(data))) : null;
-    this.db.run('UPDATE levels SET head_rev=?, deleted=?, updated_at=?, updated_by=?, summary=? WHERE id=?',
-      newRev, data ? 0 : 1, t, user, summary, lv.id);
+    const obj = data ? Store.decode(data) : null;
+    const summary = obj ? JSON.stringify(this.game.summary(obj)) : null;
+    this.db.run('UPDATE levels SET head_rev=?, deleted=?, updated_at=?, updated_by=?, summary=?, content_key=? WHERE id=?',
+      newRev, data ? 0 : 1, t, user, summary, obj ? contentKey(this.game, obj) : null, lv.id);
     return { rev: newRev, sha, created: created && !!data, summary: summary ? JSON.parse(summary) : null, changes };
   }
 
@@ -199,57 +202,112 @@ export class Store {
   // ---------- pack ----------
   ensureDefaultPacks() {
     this.db.write(() => {
-      if (this.db.get('SELECT 1 x FROM packs LIMIT 1')) return;
-      for (const name of this.s.defaultPacks) {
-        this.db.run('INSERT OR IGNORE INTO packs(name,created_at,created_by,production) VALUES(?,?,?,?)', name, now(), 'system', name === 'product' ? 1 : 0);
+      if (!this.db.get('SELECT 1 x FROM packs LIMIT 1')) {
+        for (const name of this.s.defaultPacks) {
+          this.db.run('INSERT OR IGNORE INTO packs(name,created_at,created_by,production) VALUES(?,?,?,?)', name, now(), 'system', name === 'product' ? 1 : 0);
+        }
       }
+      for (const r of this.db.all('SELECT name FROM packs WHERE code IS NULL ORDER BY created_at, name')) {
+        this.db.run('UPDATE packs SET code=? WHERE name=?', this.nextCode(), r.name);
+      }
+      this.db.run("UPDATE packs SET owner=created_by WHERE owner IS NULL AND created_by LIKE '%@%'");
     });
+    this.backfillContentKeys();
   }
 
-  static packJson(r, n) {
+  /** Mã bộ kế tiếp <ACRONYM>-S<NN>: tăng dần, không dùng lại kể cả khi bộ đã bị xoá hẳn. Gọi trong transaction. */
+  nextCode() {
+    const prefix = codePrefix(this.game.manifest);
+    const re = new RegExp(`^${prefix}-S(\\d+)$`);
+    let n = this.db.get("SELECT value FROM counters WHERE name='pack_code'")?.value ?? 0;
+    for (const r of this.db.all('SELECT code FROM packs WHERE code IS NOT NULL')) {
+      const m = re.exec(r.code);
+      if (m) n = Math.max(n, Number(m[1]));
+    }
+    n += 1;
+    this.db.run("INSERT INTO counters(name,value) VALUES('pack_code',?) ON CONFLICT(name) DO UPDATE SET value=excluded.value", n);
+    return formatCode(prefix, n);
+  }
+
+  backfillContentKeys() {
+    const rows = this.db.all(`SELECT l.id, r.blob_sha FROM levels l JOIN revisions r ON r.level_id=l.id AND r.rev=l.head_rev
+      WHERE l.content_key IS NULL AND l.deleted=0 AND r.blob_sha IS NOT NULL`);
+    if (!rows.length) return 0;
+    this.db.write(() => {
+      for (const r of rows) {
+        const obj = this.bodyOrNull(r.blob_sha);
+        if (obj) this.db.run('UPDATE levels SET content_key=? WHERE id=?', contentKey(this.game, obj), r.id);
+      }
+    });
+    return rows.length;
+  }
+
+  packOut(r, n = null, baseName = undefined) {
+    const status = statusOf(r);
     const out = {
       name: r.name, description: r.description, created_at: iso(r.created_at), created_by: r.created_by,
       archived: !!r.archived, production: !!r.production, platform: r.platform || 'android', group: r.grp || '',
       archived_at: iso(r.archived_at ?? null), archive_reason: r.archive_reason ?? null,
+      code: r.code ?? null, purpose: r.purpose || '', status, owner: r.owner ?? null,
+      notes: jsonOrNull(r.notes) || {}, deploy: jsonOrNull(r.deploy) || {},
+      base: r.base ? { code: r.base, name: baseName !== undefined ? baseName : this.db.get('SELECT name FROM packs WHERE code=?', r.base)?.name ?? null } : null,
+      review: status === 'review' ? { by: r.review_by, at: iso(r.review_at), note: r.review_note || '' } : null,
+      approved: r.approved_at != null ? { by: r.approved_by, at: iso(r.approved_at) } : null,
     };
     if (n != null) out.level_count = n;
     return out;
   }
 
-  listPacks() {
-    return this.db.all('SELECT p.*, (SELECT COUNT(*) FROM levels l WHERE l.pack=p.name AND l.deleted=0) n FROM packs p ORDER BY p.created_at, p.name')
-      .map(r => Store.packJson(r, r.n));
+  latestVersions() {
+    return new Map(this.db.all(`SELECT v.code, v.no, v.kind, v.created_at, v.author FROM pack_versions v
+      JOIN (SELECT code, MAX(no) no FROM pack_versions GROUP BY code) m ON m.code=v.code AND m.no=v.no`)
+      .map(v => [v.code, { no: v.no, kind: v.kind, at: iso(v.created_at), author: v.author }]));
   }
 
-  createPack(user, name, description = '', platform = 'android', group = '') {
+  listPacks() {
+    const rows = this.db.all('SELECT p.*, (SELECT COUNT(*) FROM levels l WHERE l.pack=p.name AND l.deleted=0) n FROM packs p ORDER BY p.created_at, p.name');
+    const names = new Map(rows.map(r => [r.code, r.name]));
+    const latest = this.latestVersions();
+    return rows.map(r => ({ ...this.packOut(r, r.n, names.get(r.base) ?? null), version: latest.get(r.code) ?? null }));
+  }
+
+  createPack(user, name, description = '', platform = 'android', group = '', { purpose = '' } = {}) {
     if (typeof name !== 'string' || !PACK_RE.test(name)) throw new ApiError(400, 'Tên bộ chỉ gồm chữ/số/_ . - (tối đa 64)');
     if (!PLATFORMS.includes(platform)) throw new ApiError(400, 'platform phải là android | ios | both');
     const g = checkGroup(group || '');
+    const pur = checkPurpose(this.game.manifest, purpose ?? '');
     const p = this.db.write(() => {
       if (this.db.get('SELECT 1 x FROM packs WHERE name=?', name)) throw new ApiError(409, `Bộ '${name}' đã có`);
-      this.db.run('INSERT INTO packs(name,description,created_at,created_by,platform,grp) VALUES(?,?,?,?,?,?)', name, description || '', now(), user, platform, g);
-      this.audit(user, 'pack.create', name, null, null, { platform, ...(g ? { group: g } : {}) });
+      const code = this.nextCode();
+      this.db.run('INSERT INTO packs(name,description,created_at,created_by,platform,grp,code,purpose,owner) VALUES(?,?,?,?,?,?,?,?,?)',
+        name, description || '', now(), user, platform, g, code, pur, user);
+      this.audit(user, 'pack.create', name, null, null, { code, platform, ...(g ? { group: g } : {}), ...(pur ? { purpose: pur } : {}) });
       return this.pack(name);
     });
     this.broker.publish('pack.created', { pack: name, author: user });
-    return Store.packJson(p, 0);
+    return this.packOut(p, 0);
   }
 
-  updatePack(user, pack, { archived = null, production = null, platform = null, group = null, description = null, archive_reason = null } = {}) {
+  updatePack(user, pack, { archived = null, production = null, platform = null, group = null, description = null, archive_reason = null,
+    purpose = null, notes = null, deploy = null } = {}) {
     for (const [k, v] of [['archived', archived], ['production', production]]) {
       if (v != null && typeof v !== 'boolean') throw new ApiError(400, `${k} phải là true/false`);
     }
     if (platform != null && !PLATFORMS.includes(platform)) throw new ApiError(400, 'platform phải là android | ios | both');
     const g = group != null ? checkGroup(group) : null;
     if (description != null && typeof description !== 'string') throw new ApiError(400, 'description phải là chuỗi');
+    const pur = purpose != null ? checkPurpose(this.game.manifest, purpose) : null;
+    const noteText = notes != null ? JSON.stringify(cleanFields(notes, NOTE_KEYS, 'notes', 2000)) : null;
+    const deployText = deploy != null ? JSON.stringify(cleanFields(deploy, DEPLOY_KEYS, 'deploy', 120)) : null;
     const changed = [];
     const p = this.db.write(() => {
       const cur = this.pack(pack);
       for (const [col, key, v, old] of [['archived', 'archived', archived, !!cur.archived], ['production', 'production', production, !!cur.production],
-        ['platform', 'platform', platform, cur.platform], ['grp', 'group', g, cur.grp], ['description', 'description', description, cur.description]]) {
+        ['platform', 'platform', platform, cur.platform], ['grp', 'group', g, cur.grp], ['description', 'description', description, cur.description],
+        ['purpose', 'purpose', pur, cur.purpose || ''], ['notes', 'notes', noteText, cur.notes || '{}'], ['deploy', 'deploy', deployText, cur.deploy || '{}']]) {
         if (v == null || v === old) continue;
         this.db.run(`UPDATE packs SET ${col}=? WHERE name=?`, typeof v === 'boolean' ? Number(v) : v, pack);
-        this.audit(user, `pack.${key}`, pack, null, null, { on: v });
+        this.audit(user, `pack.${key}`, pack, null, null, { on: col === 'notes' || col === 'deploy' ? JSON.parse(v) : v });
         changed.push(key);
       }
       if (archived && changed.includes('archived')) {
@@ -257,30 +315,39 @@ export class Store {
       }
       if (archived === false && changed.includes('archived')) this.db.run('UPDATE packs SET archived_at=NULL, archive_reason=NULL WHERE name=?', pack);
       if (archived) this.db.run('DELETE FROM locks WHERE pack=?', pack);
+      if (changed.includes('archived') || changed.includes('production')) this.clearReview(pack);
+      if (production && changed.includes('production')) this.db.run('UPDATE packs SET approved_by=?, approved_at=? WHERE name=?', user, now(), pack);
       return this.pack(pack);
     });
-    const out = { ...Store.packJson(p), changed, author: user };
+    const out = { ...this.packOut(p), changed, author: user };
     if (changed.length) this.broker.publish('pack.updated', out);
     return out;
+  }
+
+  clearReview(pack) {
+    this.db.run('UPDATE packs SET review_by=NULL, review_at=NULL, review_note=NULL WHERE name=?', pack);
   }
 
   renamePack(user, pack, to) {
     if (typeof to !== 'string' || !PACK_RE.test(to)) throw new ApiError(400, 'Tên bộ chỉ gồm chữ/số/_ . - (tối đa 64)');
     this.db.write(() => {
-      this.pack(pack);
+      const cur = this.pack(pack);
       if (to === pack) throw new ApiError(400, 'Tên mới trùng tên cũ');
       if (this.db.get('SELECT 1 x FROM packs WHERE name=?', to)) throw new ApiError(409, `Bộ '${to}' đã có`);
       const lk = this.db.get('SELECT * FROM locks WHERE pack=? AND expires_at>? ORDER BY name LIMIT 1', pack, now());
       if (lk) {
         throw new ApiError(423, `Level ${pack}/${lk.name} đang bị ${lk.holder} khoá — đổi tên bộ khi không ai đang sửa`, { pack, level: lk.name, holder: lk.holder });
       }
-      this.db.run(`INSERT INTO packs(name,description,created_at,created_by,archived,production,platform,grp,archived_at,archive_reason)
-        SELECT ?,description,created_at,created_by,archived,production,platform,grp,archived_at,archive_reason FROM packs WHERE name=?`, to, pack);
+      const cols = this.db.all('PRAGMA table_info(packs)').map(c => c.name).filter(c => c !== 'name' && c !== 'code').join(',');
+      this.db.run('UPDATE packs SET code=NULL WHERE name=?', pack);
+      this.db.run(`INSERT INTO packs(name,${cols}) SELECT ?,${cols} FROM packs WHERE name=?`, to, pack);
       this.db.run('UPDATE levels SET pack=? WHERE pack=?', to, pack);
       this.db.run('DELETE FROM locks WHERE pack=?', pack);
       this.db.run('UPDATE audit SET pack=? WHERE pack=?', to, pack);
+      this.db.run('UPDATE live_stats SET pack=? WHERE pack=?', to, pack);
       this.db.run('DELETE FROM packs WHERE name=?', pack);
-      this.audit(user, 'pack.rename', to, null, null, { renamed_from: pack });
+      this.db.run('UPDATE packs SET code=? WHERE name=?', cur.code, to);
+      this.audit(user, 'pack.rename', to, null, null, { renamed_from: pack, code: cur.code });
     });
     const out = { from: pack, to, author: user };
     this.broker.publish('pack.renamed', out);

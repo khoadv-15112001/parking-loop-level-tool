@@ -1,5 +1,6 @@
 // Cấu hình server Node từ biến môi trường <PREFIX>_* (PREFIX = manifest.prefix) — cùng tên biến với server Python
 // (levelcore/README.md). Trên BI Center: SBP_* là mặc định, <PREFIX>_* (nếu đặt) thắng.
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +9,18 @@ export const REPO = path.dirname(CORE);
 
 const bool = v => ['1', 'true', 'yes', 'on'].includes(String(v ?? '').trim().toLowerCase());
 const list = v => String(v ?? '').split(',').map(x => x.trim()).filter(Boolean);
+
+function serviceAccountKey(e, env) {
+  const inline = String(e('BI_SERVICE_ACCOUNT_KEY', env.BI_SERVICE_ACCOUNT_KEY ?? '')).trim();
+  if (inline) return inline;
+  const file = String(e('BI_KEY_FILE', '')).trim();
+  if (!file) return '';
+  try {
+    return fs.readFileSync(file, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
 
 export function settingsFromEnv(manifest, env = process.env) {
   const p = manifest.prefix;
@@ -39,6 +52,7 @@ export function settingsFromEnv(manifest, env = process.env) {
     biFirebaseAuthDomain: e('BI_FIREBASE_AUTH_DOMAIN', ''),
     biFirebaseProjectId: e('BI_FIREBASE_PROJECT_ID', ''),
     biFirebaseAppId: e('BI_FIREBASE_APP_ID', ''),
+    biServiceAccountKey: serviceAccountKey(e, env),
     gameDir: e('GAME_DIR') || (dataDir ? path.join(dataDir, 'game') : path.join(REPO, 'data', 'game')),
     ciToken: String(e('CI_TOKEN', '')).trim(),
     ciBranch: String(e('CI_BRANCH', '')).trim(),
