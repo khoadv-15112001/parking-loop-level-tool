@@ -1,13 +1,13 @@
 // Chép art / âm thanh / font của bản Unity sang game/web/art/ cho màn Chơi thử (game/web/playview.mjs).
 //   node game/tools/unity_art.mjs <repo Unity parking-loop>
-// Model xe 3D: unity_mesh.mjs → car_mesh.json. Ảnh được thu nhỏ (cạnh dài tối đa `max` px) bằng System.Drawing của Windows PowerShell; âm thanh và font chép nguyên.
+// Model xe 3D và bảng đếm vòng: unity_mesh.mjs → car_mesh.json, sign_mesh.json. Ảnh được thu nhỏ (cạnh dài tối đa `max` px) bằng System.Drawing của Windows PowerShell; âm thanh và font chép nguyên.
 // Art trong game đổi thì chạy lại, xem màn Chơi thử rồi commit game/web/art/.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { exportCarMesh } from './unity_mesh.mjs';
+import { exportCarMesh, exportSignMesh } from './unity_mesh.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, '../web/art');
@@ -85,5 +85,7 @@ execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Fi
 fs.rmSync(tmp, { recursive: true, force: true });
 const mesh = exportCarMesh(repo, path.join(OUT, 'car_mesh.json'));
 console.log(`mesh xe: ${mesh.vertices} đỉnh, ${mesh.subs.map(s => s.name).join(', ')}`);
+const sign = exportSignMesh(repo, path.join(OUT, 'sign_mesh.json'));
+console.log(`mesh bảng đếm vòng: ${sign.vertices} đỉnh, ${sign.subs.map(s => s.name).join(', ')}`);
 const total = fs.readdirSync(OUT).reduce((n, f) => n + fs.statSync(path.join(OUT, f)).size, 0);
 console.log(`${IMAGES.length} ảnh + ${COPY.length} file → ${path.relative(process.cwd(), OUT)} (${(total / 1024).toFixed(0)} KB)`);

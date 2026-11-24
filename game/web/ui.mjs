@@ -4,6 +4,10 @@
 import {
   CODES, COLOR_HEX, COLOR_VN, DEFAULT_LOOP, OBSTACLE, colorOf, lotOrder, normalize, tryConvert,
 } from './format.mjs';
+import {
+  colorCounts, cnOf, dropLinksTo, ensure, flag, lanesOf, lotOf, moveCar, num, pOf, renumberColumn, setP, shuffleColors,
+  syncColumns,
+} from './edit.mjs';
 import { ParkingModel } from './model.mjs';
 import { PlayView, artUrl, loadArt, sound } from './playview.mjs';
 import { COS, SIN } from './carmesh.mjs';
@@ -13,61 +17,6 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const hexOf = ch => COLOR_HEX[CODES.indexOf(String(ch).toUpperCase()) + 1] || COLOR_HEX[0];
 const DARK_TEXT = new Set(['Y', 'W', 'C', 'L', 'T']);
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
-
-// ───────────────────────────── sửa raw (giữ kiểu file gọn) ─────────────────────────────
-
-const flag = (o, k, v) => { if (v) o[k] = true; else if (k in o) o[k] = false; };
-const num = (o, k, v) => { if (v) o[k] = v; else delete o[k]; };
-
-function ensure(raw) {
-  if (!isObj(raw.pf)) raw.pf = {};
-  if (!Array.isArray(raw.pf.sd)) raw.pf.sd = [];
-  if (!isObj(raw.ui)) raw.ui = {};
-  if (!Array.isArray(raw.ui.u)) raw.ui.u = [];
-  for (const s of raw.pf.sd) { if (!Array.isArray(s.se)) s.se = []; }
-  return raw;
-}
-const pOf = o => ({ x: o?.p?.x | 0, y: o?.p?.y | 0 });
-const cnOf = u => (isObj(u.cn) ? { x: u.cn.x | 0, y: u.cn.y | 0 } : null);
-const setP = (o, p) => { if (p.x || p.y || o.p) o.p = { x: p.x, y: p.y }; if (!p.x && !p.y && o.p && !('x' in o.p && 'y' in o.p)) o.p = { x: 0, y: 0 }; };
-
-/** Làn theo thứ tự game (p.y, p.x) → object sd trong raw. */
-function lanesOf(raw) {
-  return raw.pf.sd.map((s, i) => [s, i]).sort((a, b) => pOf(a[0]).y - pOf(b[0]).y || pOf(a[0]).x - pOf(b[0]).x || a[1] - b[1]).map(([s]) => s);
-}
-
-/** Cột bãi theo thứ tự game → [{x, units: [object ui.u, trước (sát đường) → sau]}]. */
-function lotOf(raw) {
-  const n = normalize(raw);
-  return lotOrder(n).map(g => ({ x: g.x, units: g.units.map(i => raw.ui.u[i]) }));
-}
-
-/** Đặt lại y trong một cột bãi theo thứ tự mới (trước → sau) và sửa mọi cn trỏ vào các ô đã dời. */
-function renumberColumn(raw, x, units) {
-  const moved = new Map();
-  units.forEach((u, i) => {
-    const old = pOf(u), y = units.length - 1 - i;
-    moved.set(`${old.x},${old.y}`, { x, y });
-    setP(u, { x, y });
-  });
-  for (const u of raw.ui.u) {
-    const cn = cnOf(u);
-    if (cn && moved.has(`${cn.x},${cn.y}`) && !units.includes(u)) u.cn = { ...moved.get(`${cn.x},${cn.y}`) };
-  }
-  for (const u of units) {
-    const cn = cnOf(u);
-    if (cn && moved.has(`${cn.x},${cn.y}`)) u.cn = { ...moved.get(`${cn.x},${cn.y}`) };
-  }
-}
-
-function syncColumns(raw) {
-  const n = lotOf(raw).length, old = Array.isArray(raw.ui.c) ? raw.ui.c : [];
-  raw.ui.c = Array.from({ length: n }, (_, i) => old[i] ?? (i ? { o: i } : {}));
-}
-
-function dropLinksTo(raw, p) {
-  for (const u of raw.ui.u) { const cn = cnOf(u); if (cn && cn.x === p.x && cn.y === p.y) delete u.cn; }
-}
 
 // ───────────────────────────── editor ─────────────────────────────
 
@@ -84,7 +33,7 @@ const TOOLS = [
 function renderEditor(ctx) {
   const st = {
     level: ctx.level, editable: ctx.editable, mode: 'edit', tool: 'paint', color: 'R', lane: -1, linkFrom: null,
-    play: null, solve: null, worker: null,
+    play: null, solve: null, worker: null, help: helpPref(),
   };
   const root = document.createElement('div');
   root.className = 'pl-root';
@@ -120,7 +69,7 @@ function renderEditor(ctx) {
     switch (st.tool) {
       case 'paint':
         if (u) { u.co = CODES.indexOf(st.color) + 1; break; }
-        col.units.push({ co: CODES.indexOf(st.color) + 1, p: { x: col.x, y: 0 } });
+        col.units.push({ co: CODES.indexOf(st.color) + 1, p: { x: -9, y: -9 } });
         raw.ui.u.push(col.units.at(-1));
         renumberColumn(raw, col.x, col.units);
         break;
@@ -200,12 +149,78 @@ function renderEditor(ctx) {
     changed();
   }
 
+  /** Chiều cao làn (pf.cp) và sức chứa vòng (pf.tl, 0 = mặc định 5). */
+  function levelProp(key, d) {
+    const raw = ensure(st.level);
+    if (key === 'cp') {
+      const most = Math.max(0, ...raw.pf.sd.map(sd => sd.se.length));
+      const v = Math.min(12, Math.max(1, (raw.pf.cp | 0) + d));
+      if (v < most) ctx.toast?.(`Có làn đang ${most} xe: xe vượt chiều cao làn bị game bỏ`);
+      raw.pf.cp = v;
+    } else {
+      raw.pf.tl = Math.min(60, Math.max(1, ((raw.pf.tl | 0) || DEFAULT_LOOP) + d));
+    }
+    changed();
+  }
+
+  function shuffle() {
+    const n = shuffleColors(ensure(st.level));
+    if (!n) return ctx.toast?.('Không có xe để trộn');
+    changed();
+  }
+
+  /** Kéo-thả trên ảnh bàn chơi: đổi chỗ / dời xe (edit.mjs moveCar). */
+  function dropCar(src, dst) {
+    const why = moveCar(st.level, src, dst);
+    if (why) { if (why !== 'cùng chỗ') ctx.toast?.(`Không dời được: ${why}`); return draw(); }
+    changed();
+  }
+
   function addColumn() {
     const raw = ensure(st.level), cols = lotOf(raw);
     const x = cols.length ? Math.max(...cols.map(c => c.x)) + 1 : 0;
     raw.ui.u.push({ co: CODES.indexOf(st.color) + 1, p: { x, y: 0 } });
     syncColumns(raw);
     changed();
+  }
+
+  // ---------- hướng dẫn xếp level (mở / đóng nhớ theo trình duyệt) ----------
+  function setHelp(on) {
+    st.help = on;
+    try { localStorage.setItem('parkinglevel.help', on ? '1' : '0'); } catch { /* không lưu được */ }
+    draw();
+  }
+
+  function helpPanel(raw, conv) {
+    if (!st.help) return '';
+    const cp = Math.max(1, raw.pf.cp | 0), counts = colorCounts(raw);
+    const laneCars = raw.pf.sd.reduce((n, sd) => n + sd.se.filter(e => e?.c).length, 0), lotCars = raw.ui.u.length;
+    const bad = [...counts].filter(([, k]) => k % cp).map(([ch, k]) => `${COLOR_VN[CODES.indexOf(ch) + 1]} ${k}`);
+    const over = raw.pf.sd.some(sd => sd.se.length > cp);
+    const solved = st.solve?.report?.verdict;
+    const check = (ok, text, todo) => `<li class="${ok ? 'ok' : 'todo'}">${ok ? '✓' : '○'} ${text}${!ok && todo ? ` <span class="muted">— ${todo}</span>` : ''}</li>`;
+    return `<div class="pl-help">
+      <div class="pl-help-head"><b>Cách xếp một level</b><button data-act="help" title="Ẩn hướng dẫn">✕</button></div>
+      <p class="small">Luật: bấm xe đầu cột bãi (dưới) → xe chạy lên vòng rồi vào làn (trong vòng). Làn đủ <b>${cp}</b> xe cùng màu
+        (= Cao làn) thì nổ. Hết xe là thắng; vòng đầy mà không xe nào vào được làn là thua.</p>
+      <ol class="small">
+        <li>Level mới: nút <b>＋ Mới</b> dưới danh sách bên trái (phím N), bỏ chọn "Sao chép level đang mở" để bắt đầu từ bàn trống
+          (3 làn cao 3, bãi 2 cột), rồi bấm <b>Sửa</b> (phím E).</li>
+        <li>Đặt kích thước: <b>Cao làn</b>, <b>Vòng</b> (số chỗ trên vòng), <b>＋ Làn</b> / <b>＋ Cột bãi</b> dưới hình; chọn làn bằng
+          cách bấm đầu làn (sát đường trên) rồi Xoá làn trong bảng làn.</li>
+        <li>Chọn màu ở hàng ô màu, bấm ô trống trong làn để đặt xe, bấm <b>+</b> cuối cột bãi để thêm xe bãi; bấm lên xe để đổi màu.</li>
+        <li>Kéo xe để xếp lại: thả lên xe khác = đổi chỗ, thả vào ô trống = dời tới đó (kéo được giữa làn và bãi).</li>
+        <li>Thêm độ khó: xe ẩn (chuột phải), chìa / hộp khoá, máy phát, nối xe (công cụ phía trên), vật cản làn (bấm đầu làn).</li>
+        <li>Bấm <b>🧠 Giải</b> để kiểm level thắng được, <b>▶ Chơi thử</b> để chơi, rồi <b>Lưu</b> (Ctrl+S).</li>
+      </ol>
+      <ul class="pl-check small">
+        ${check(laneCars + lotCars > 0, `Có xe (${laneCars} trong làn, ${lotCars} trong bãi)`, 'đặt xe vào làn / bãi')}
+        ${check(!bad.length && counts.size > 0, `Số xe mỗi màu chia hết cho ${cp}`, bad.join(', '))}
+        ${check(!over, 'Không làn nào quá Cao làn', 'bớt xe hoặc tăng Cao làn')}
+        ${check(solved === 'Solvable', solved ? `Giải: ${solved === 'Solvable' ? 'thắng được' : 'chưa thắng được'}` : 'Đã bấm Giải', solved && solved !== 'Solvable' ? 'đổi chỗ / màu rồi giải lại' : 'bấm 🧠 Giải')}
+        ${st.editable ? '' : check(false, 'Đang ở chế độ xem', 'bấm Sửa (E) để chỉnh')}
+      </ul>${conv ? '' : '<p class="small err">Level chưa dựng được bàn chơi: cần ít nhất một làn.</p>'}
+    </div>`;
   }
 
   // ---------- vẽ editor ----------
@@ -216,13 +231,19 @@ function renderEditor(ctx) {
     const n = normalize(raw), cp = Math.max(1, n.pf.cp), lanes = lanesOf(raw), cols = lotOf(raw);
     const conv = tryConvert(raw).level;
     const ed = st.editable;
-    let h = '';
+    let h = helpPanel(raw, conv);
     if (ed) {
       h += '<div class="pl-tools">';
       h += TOOLS.map(([id, icon, tip]) => `<button class="pl-tool${st.tool === id ? ' on' : ''}" data-tool="${id}" title="${esc(tip)}">${icon}</button>`).join('');
       h += '<span class="pl-sep"></span>';
       h += [...CODES].map((ch, i) => `<button class="pl-swatch${st.color === ch ? ' on' : ''}" data-color="${ch}" title="${i + 1} ${esc(COLOR_VN[i + 1])}" style="--c:${COLOR_HEX[i + 1]}"><span>${i + 1}</span></button>`).join('');
       h += '</div>';
+      const cpv = Math.max(1, raw.pf.cp | 0), tlv = (raw.pf.tl | 0) || DEFAULT_LOOP;
+      h += `<div class="pl-tools pl-levelbar">
+        <span class="pl-step" title="Chiều cao làn (pf.cp): số xe tối đa mỗi làn">Cao làn <button data-act="cp-">−</button><b>${cpv}</b><button data-act="cp+">＋</button></span>
+        <span class="pl-step" title="Sức chứa vòng (pf.tl): số chỗ trên vòng${raw.pf.tl ? '' : ', đang dùng mặc định'}">Vòng <button data-act="tl-">−</button><b>${tlv}</b><button data-act="tl+">＋</button></span>
+        <button data-act="shuffle" title="Trộn màu mọi xe, giữ số xe mỗi màu và chỗ xe ẩn / chìa / nối">🔀 Trộn màu</button>
+        <span class="muted small">Kéo xe để xếp: thả lên xe khác = đổi chỗ, thả vào ô trống = dời tới đó</span></div>`;
     }
     if (conv) {
       // Ảnh bàn chơi vẽ như game (playview.mjs); bấm ô làn / xe bãi để sửa, bấm đầu làn (sát đường trên) để chọn làn.
@@ -448,7 +469,7 @@ function renderEditor(ctx) {
     }
     if (kind === 'loop') {
       if (m.state === 'lost') { if (!m.canReviveHelp(1)) return flash('Hồi sinh không cứu được'); m.revive(1); }
-      else { m.addLoop(1); p.view.showPopup('+1 Loop', '#8cd9ff', 0.9); p.view.signFlash = 0.6; p.view.signColor = 'blue'; }
+      else { m.addLoop(1); p.view.showToast('+1 loop slot'); p.view.kick(0.03); p.view.flashSign('green'); sound.play('go'); }
       p.boosters++; record('cheat'); drain(); return hud();
     }
     if (kind === 'shuffle') { snapshot(); const n = m.shuffleLot(); if (!n) { p.history.pop(); return flash('Không có gì để xáo'); } p.boosters++; record('cheat'); drain(); return hud(); }
@@ -578,7 +599,7 @@ function renderEditor(ctx) {
     const view = st.editView ??= new PlayView();
     view.reset(m, [], false);
     const dpr = window.devicePixelRatio || 1, rows = m.jh + 0.4;
-    const b = view.L.boardBounds(rows), bw = Math.max(b.x1, m.W + 1.4) - b.x0 + 0.6, bh = ((b.z1 - b.z0) * SIN + 0.3 * COS) / 0.92;
+    const b = view.L.boardBounds(rows), bw = b.x1 - b.x0 + 0.6, bh = ((b.z1 - b.z0) * SIN + 0.3 * COS) / 0.92;
     const maxH = Math.max(380, window.innerHeight - cv.getBoundingClientRect().top - 110);
     const W = Math.floor(Math.min(560, Math.max(240, cv.parentElement.clientWidth - 4), maxH * bw / bh));
     const H = Math.ceil(W / bw * bh);
@@ -589,25 +610,72 @@ function renderEditor(ctx) {
     }
     const c = cv.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    view.paint(c, m, { dpr, edit: { lane: st.lane, linkFrom: st.linkFrom, slots: st.editable } });
+    view.paint(c, m, { dpr, edit: { lane: st.lane, linkFrom: st.linkFrom, slots: st.editable, drag: st.drag } });
     cv._edit = { view, m };
   }
 
-  function editClick(ev, right = false) {
-    const cv = ev.currentTarget, e = cv._edit;
-    if (!e) return;
-    const r = cv.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top;
+  /** Điểm trên ảnh bàn chơi → ô: {kind: 'lot', ci, row} | {kind: 'lane', x, slot} | {kind: 'head', x} | null. */
+  function editHit(cv, clientX, clientY, drop = false) {
+    const e = cv._edit;
+    if (!e) return null;
+    const r = cv.getBoundingClientRect(), sx = clientX - r.left, sy = clientY - r.top;
     const { view, m } = e, v = view.v, L = view.L;
     const wx = (sx - v.ox) / v.s, wz = (v.oy - sy) / (v.s * SIN) - 0.3 * COS / SIN;   // mặt trên xe (cao ~0.3)
-    const run = fn => { if (!right) return fn(); const tool = st.tool; st.tool = 'hidden'; try { fn(); } finally { st.tool = tool; } return undefined; };
     const ci = Math.floor((wx - L.jamLeftX) / L.jc), row = Math.floor((L.jamTopZ - wz) / L.jc);
-    if (ci >= 0 && ci < m.jw && row >= 0 && wz < L.lotTopZ) return run(() => lotClick(ci, row));
+    if (ci >= 0 && (ci < m.jw || (drop && ci === m.jw)) && row >= 0 && wz < L.lotTopZ) return { kind: 'lot', ci, row };
     const x = Math.round(wx);
-    if (x < 0 || x >= m.W || Math.abs(wx - x) > 0.5) return undefined;
-    if (wz > m.H - 0.5 && wz < m.H + 0.7) { if (!right) { st.lane = st.lane === x ? -1 : x; draw(); } return undefined; }
+    if (x < 0 || x >= m.W || Math.abs(wx - x) > 0.5) return null;
+    if (wz > m.H - 0.5 && wz < m.H + 0.7) return drop ? { kind: 'lane', x, slot: m.hs[x] } : { kind: 'head', x };
     const slot = Math.round(wz - (m.H - m.hs[x]));
-    if (slot >= 0 && slot < m.hs[x]) return run(() => laneClick(x, slot));
-    return undefined;
+    if (slot >= 0 && slot < m.hs[x]) return { kind: 'lane', x, slot };
+    return null;
+  }
+
+  /** Xe đang có ở ô (để bắt đầu kéo): trả màu vẽ hoặc null. Hộp khoá / máy phát không kéo. */
+  function carAt(h) {
+    if (!h) return null;
+    const raw = ensure(st.level);
+    if (h.kind === 'lane') { const e = lanesOf(raw)[h.x]?.se[h.slot]; return e?.c ? { hex: hexOf(colorOf(e.c)), hidden: !!e.h } : null; }
+    if (h.kind === 'lot') { const u = lotOf(raw)[h.ci]?.units[h.row]; return u && !u.l && !(u.sg > 0) ? { hex: hexOf(colorOf(u.co)), hidden: !!u.h } : null; }
+    return null;
+  }
+
+  function editClick(h, right = false) {
+    if (!h) return undefined;
+    const run = fn => { if (!right) return fn(); const tool = st.tool; st.tool = 'hidden'; try { fn(); } finally { st.tool = tool; } return undefined; };
+    if (h.kind === 'lot') return run(() => lotClick(h.ci, h.row));
+    if (h.kind === 'head') { if (!right) { st.lane = st.lane === h.x ? -1 : h.x; draw(); } return undefined; }
+    return run(() => laneClick(h.x, h.slot));
+  }
+
+  function editPointers(cv) {
+    cv.addEventListener('pointerdown', ev => {
+      if (ev.button !== 0) return;
+      const h = editHit(cv, ev.clientX, ev.clientY);
+      st.press = { h, x: ev.clientX, y: ev.clientY, car: st.editable ? carAt(h) : null };
+      if (st.press.car) cv.setPointerCapture(ev.pointerId);
+    });
+    cv.addEventListener('pointermove', ev => {
+      const p = st.press;
+      if (!p) { cv.style.cursor = st.editable && carAt(editHit(cv, ev.clientX, ev.clientY)) ? 'grab' : ''; return; }
+      if (!p.car) return;
+      if (!st.drag && Math.hypot(ev.clientX - p.x, ev.clientY - p.y) < 6) return;
+      const r = cv.getBoundingClientRect();
+      st.drag = { src: p.h, car: p.car, sx: ev.clientX - r.left, sy: ev.clientY - r.top, dst: editHit(cv, ev.clientX, ev.clientY, true) };
+      cv.style.cursor = 'grabbing';
+      paintEdit();
+    });
+    const end = ev => {
+      const p = st.press, d = st.drag;
+      st.press = null; st.drag = null;
+      cv.style.cursor = '';
+      if (ev.type === 'pointercancel' || !p) return paintEdit();
+      if (d) { if (d.dst && d.dst.kind !== 'head') return dropCar(d.src, d.dst); return paintEdit(); }
+      return editClick(p.h);
+    };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    cv.addEventListener('contextmenu', ev => { ev.preventDefault(); if (st.editable) editClick(editHit(cv, ev.clientX, ev.clientY), true); });
   }
 
   // Chơi thử mặc định phủ cả cửa sổ, bàn chơi ở giữa màn hình; ✕ Thu nhỏ về lại tab Editor (nhớ theo trình duyệt).
@@ -639,7 +707,7 @@ function renderEditor(ctx) {
 
   function solveHtml() {
     const s = st.solve;
-    if (!s) return '<span class="muted small">Giải: thử mọi thứ tự bấm (bấm rồi chờ vòng đứng yên), như Check Solvable của Unity.</span>';
+    if (!s) return '';
     if (s.running) return `<span>⏳ Đang giải… ${s.states.toLocaleString()} trạng thái</span> <button data-act="solvestop">Dừng</button>`;
     const r = s.report, cls = { Solvable: 'ok', Unknown: 'warn' }[r.verdict] || 'err';
     const vn = { Solvable: 'Giải được', Impossible: 'Không thể (đếm màu)', Unsolvable: 'Không giải được', Unknown: 'Chưa rõ', Invalid: 'Lỗi level' }[r.verdict];
@@ -652,7 +720,7 @@ function renderEditor(ctx) {
     const tabs = `<div class="pl-modes">
       <button data-mode="edit" class="${st.mode === 'edit' ? 'on' : ''}">✎ Bàn chơi</button>
       <button data-mode="play" class="${st.mode === 'play' ? 'on' : ''}" title="Chơi thử ngay trong tool bằng luật của game (phím R)">▶ Chơi thử</button>
-      <span class="pl-solve">${solveHtml()}</span>${st.solve?.running ? '' : '<button data-act="solve" title="Tìm thứ tự bấm thắng được (phím K)">🧠 Giải</button>'}</div>`;
+      <span class="pl-solve">${solveHtml()}</span>${st.solve?.running ? '' : '<button data-act="solve" title="Tìm thứ tự bấm thắng được: thử mọi thứ tự bấm (bấm rồi chờ vòng đứng yên), như Check Solvable của Unity (phím K)">🧠 Giải</button>'}${st.mode === 'edit' && !st.help ? '<button data-act="help" title="Cách xếp một level">❔</button>' : ''}</div>`;
     root.classList.toggle('pl-play-mode', st.mode === 'play');
     root.innerHTML = tabs + (st.mode === 'play' && st.play ? playHtml() : `<div class="pl-edit">${drawEdit()}</div>`);
     if (st.mode === 'play') {
@@ -664,8 +732,7 @@ function renderEditor(ctx) {
       root.classList.remove('pl-focus');
       const ecv = root.querySelector('.pl-edit-canvas');
       if (ecv) {
-        ecv.addEventListener('click', ev => editClick(ev));
-        ecv.addEventListener('contextmenu', ev => { ev.preventDefault(); if (st.editable) editClick(ev, true); });
+        editPointers(ecv);
         paintEdit();
         loadArt().then(() => { if (st.editView) st.editView.board = null; paintEdit(); });
       }
@@ -702,6 +769,10 @@ function renderEditor(ctx) {
     }
     if (d.act === 'addlane') return addLane();
     if (d.act === 'addcol') return addColumn();
+    if (d.act === 'cp-' || d.act === 'cp+') return st.editable && levelProp('cp', d.act === 'cp+' ? 1 : -1);
+    if (d.act === 'tl-' || d.act === 'tl+') return st.editable && levelProp('tl', d.act === 'tl+' ? 1 : -1);
+    if (d.act === 'shuffle') return st.editable && shuffle();
+    if (d.act === 'help') return setHelp(!st.help);
     if (['left', 'right', 'dellane'].includes(d.act)) return laneOp(d.act === 'dellane' ? 'del' : d.act);
     if (d.act === 'solve') return solve();
     if (d.act === 'solvestop') { st.worker?.terminate(); st.worker = null; st.solve = null; return draw(); }
@@ -755,6 +826,7 @@ function renderEditor(ctx) {
 }
 
 let current = null;
+const helpPref = () => { try { return localStorage.getItem('parkinglevel.help') !== '0'; } catch { return true; } };
 
 // ───────────────────────────── ảnh nhỏ (Thư viện, Thứ tự) ─────────────────────────────
 // rules.thumbnail trả SVG ngay; trên trình duyệt hook này đánh dấu SVG rồi vẽ lần lượt ảnh như màn Chơi thử (playview.mjs)
@@ -778,7 +850,7 @@ function thumbWork() {
           const conv = tryConvert(level).level, m = new ParkingModel(conv);
           thumbView ??= new PlayView();
           thumbView.reset(m, [], false);
-          const rows = Math.min(m.jh, 4) + 0.3, b = thumbView.L.boardBounds(rows), bw = Math.max(b.x1, m.W + 1.4) - b.x0 + 0.6;
+          const rows = Math.min(m.jh, 4) + 0.3, b = thumbView.L.boardBounds(rows), bw = b.x1 - b.x0 + 0.6;
           const W = 220, H = Math.ceil(W / bw * ((b.z1 - b.z0) * SIN + 0.3 * COS) / 0.94);
           const cv = document.createElement('canvas'); cv.width = W * 2; cv.height = H * 2;
           thumbView.fit(m, W, H, { rows, wide: true, topPad: 0.03, botPad: 0.03 });

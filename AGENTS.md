@@ -38,7 +38,7 @@ Người dùng hay hết token và chuyển sang phiên Claude / tài khoản kh
 
 ## Luật (port từ bản Unity)
 
-Chép tay từ `Assets/_Game/Scripts/Core/` của repo Unity (đã theo tới commit `221fe53d` ngày 24/11/2026; Core không đổi từ
+Chép tay từ `Assets/_Game/Scripts/Core/` của repo Unity (đã theo tới commit `923942cc` ngày 24/11/2026; Core không đổi từ
 `2eb94342`: vòng chạy ngược chiều kim đồng hồ, cổng ở trạm dưới W/2, xe vào / ra vòng cần một trạm trống trước và sau):
 
 | Unity | Tool |
@@ -52,7 +52,7 @@ giữ các level mẫu mà test Unity (`ParkingLevelDataTests.LoopLevel_IsSolvab
 `git -C <repo Unity> log --oneline <commit đã port>..HEAD -- Assets/_Game/Scripts/Core Assets/_Game/Scripts/View`.
 Chưa port: đọc level nén (gzip / brotli / binary), crossway hai hàng làn (game cũng chơi thành một hàng), xe ma `gc`, băng ở bãi `ic`.
 
-## Hình, chuyển động, VFX (port từ `Assets/_Game/Scripts/View/`, theo tới `221fe53d`)
+## Hình, chuyển động, VFX (port từ `Assets/_Game/Scripts/View/`, theo tới `923942cc`)
 
 Màn Chơi thử, ảnh bàn chơi ở Editor và ảnh nhỏ ở Thư viện dùng chung một renderer, vẽ như scene Gameplay của Unity:
 
@@ -61,6 +61,7 @@ Màn Chơi thử, ảnh bàn chơi ở Editor và ảnh nhỏ ở Thư viện d�
 | `ParkingLayout.cs` (toạ độ thế giới, đường vòng bo góc 0.9, `LoopAt`, `BodyOnLoop`, `BayPos`, `TransitRoute`) | `game/web/layout.mjs` |
 | `CarView.cs` (`Step`, `UpdateBody`, leg / merge / loop follower, drift, khói xả, bóng) | `game/web/carview.mjs` |
 | Model `Prefabs/Car.prefab` + vật liệu `Car_*.mat`, scene: camera trực giao nghiêng 72°, đèn Euler(55,-35) 1.15 + Euler(40,140) 0.45, ambient phẳng (0.55,0.58,0.62) | `game/web/carmesh.mjs` (WebGL, BRDF của URP Lit) |
+| `ParkingLoopSign.cs` + object `Sign-ConveyorCount` trong `Gameplay.unity` (bảng đếm vòng 3D thay LoopBadge: chân cột ở (W+0.62, 0, -1.7), trượt ngang cho lọt khung, chữ used/cap nảy khi đổi, đỏ + đập khi đầy, lắc khi FlashLoop, hạt HitToSign khi thêm chỗ) | `playview.mjs` (`signPos`, `drawSign`, `flashSign`), mesh `art/sign_mesh.json` |
 | `ParkingBoardView.cs` (Road_Vertical dọc tim đường, vạch, mũi tên, cỏ, vật cản làn), `ParkingGameController.cs` (`SyncViews`, transit, `DrainEvents`, `ClearRoutine`, `PopAndDestroy`, `ClearGlow`), `ParkingCameraRig.cs`, `ParkingHud.Popup / ShowCountdown`, `Editor/ParkingGeneratedFx.cs` (FX_Tap / Clear / Debris / Ice / Confetti), `ParkingPalette.cs` | `game/web/playview.mjs` |
 
 - Toạ độ: x sang phải, z lên trên màn hình, 1 đơn vị = 1 ô làn; chiếu `screen = (ox + x·s, oy − (z·sin72 + y·cos72)·s)`.
@@ -75,10 +76,16 @@ Màn Chơi thử, ảnh bàn chơi ở Editor và ảnh nhỏ ở Thư viện d�
 - Một context WebGL dùng chung cho mọi `PlayView` (`sharedGL`): trình duyệt giới hạn số context.
 - Ảnh nhỏ: `rules.thumbnail` trả SVG (chạy cả server); trên trình duyệt `globalThis.parkingThumb` (đăng ký trong ui.mjs)
   đánh dấu SVG rồi vẽ dần ảnh như màn chơi lúc rảnh và thay vào.
-- Editor (`renderEditor`, chế độ Bàn chơi): canvas `paintEdit` vẽ toàn bộ bãi, `editClick` đổi điểm bấm ra ô làn / ô bãi rồi
-  gọi `laneClick(lane, slot)` / `lotClick(col, unit)` (lane = thứ tự `lanesOf`, slot 0 = đáy làn; col = thứ tự `lotOf`,
-  unit 0 = sát đường). Bấm đầu làn (sát đường trên) để chọn làn, chuột phải = bật / tắt xe ẩn. Level không dựng được thì
-  hiện lưới ô màu cũ.
+- Editor (`renderEditor`, chế độ Bàn chơi): canvas `paintEdit` vẽ toàn bộ bãi, `editHit` đổi điểm bấm ra ô
+  (`{kind: 'lane', x, slot}` / `{kind: 'lot', ci, row}` / `{kind: 'head', x}`; slot 0 = đáy làn, row 0 = sát đường). Bấm
+  gọi `laneClick` / `lotClick` theo công cụ; kéo xe quá 6 px rồi thả = `moveCar`. Bấm đầu làn (sát đường trên) để chọn
+  làn, chuột phải = bật / tắt xe ẩn. Thanh dưới công cụ: cao làn (pf.cp), sức chứa vòng (pf.tl), trộn màu. Level không
+  dựng được thì hiện lưới ô màu cũ.
+- Khung "Cách xếp một level" (`helpPanel`) ở đầu Editor: sửa luồng làm level hay đổi nút thì sửa cả chữ ở đây.
+- Khung hình (`PlayView.fit`) căn theo `boardBounds`, không chừa chỗ cho bảng đếm vòng (bảng tự trượt vào khung).
+- `game/web/edit.mjs`: mọi thao tác sửa raw của Editor (JS thuần, test ở `game/tests/edit.test.mjs`). Bãi xếp lại bằng
+  `relayout(raw, cols)` (cột i có x = i, sửa mọi `cn` theo vị trí mới); xe mới thêm vào bãi phải có p tạm ngoài bãi
+  (x = -9) để không trùng khoá vị trí cũ. Xếp thứ tự level trong bộ là màn Thứ tự của core (dùng `setLevelNumber`).
 - Thang máy (`elv`) và vật rèm trên xe (`coc`) chỉ sửa ở tab JSON.
 - Tab Chơi thử của core (khung WebGL) dùng khi có bản WebGL của game kèm bridge `parkinglevel-game` / tag `PARKINGLEVEL`.
 - `game/web/game.css`: màu giao diện editor / thanh chơi.
@@ -86,8 +93,9 @@ Màn Chơi thử, ảnh bàn chơi ở Editor và ảnh nhỏ ở Thư viện d�
 ### Art (`game/web/art/`)
 
 Chép từ repo Unity bằng `node game/tools/unity_art.mjs "<repo Unity>"`: ảnh (danh sách `IMAGES` trong script, thu nhỏ bằng
-System.Drawing của Windows PowerShell), âm thanh, font Mikado, và `car_mesh.json` (mesh xe đọc từ `Car.prefab` → mesh
-`.asset` YAML, `game/tools/unity_mesh.mjs`). Art trong game đổi thì chạy lại rồi commit. Thêm ảnh mới: thêm vào `IMAGES`
+System.Drawing của Windows PowerShell), âm thanh, font Mikado, `car_mesh.json` (mesh xe đọc từ `Car.prefab` → mesh
+`.asset` YAML) và `sign_mesh.json` (bảng đếm vòng: `Sign-ConveyorCount` trong `Gameplay.unity`, nướng scale / xoay vào
+đỉnh, kèm khung chữ và chỗ bắn hạt), cả hai ở `game/tools/unity_mesh.mjs`. Art trong game đổi thì chạy lại rồi commit. Thêm ảnh mới: thêm vào `IMAGES`
 của script và `IMAGES` của playview.mjs.
 
 ### Bẫy đã gặp
@@ -100,4 +108,7 @@ của script và `IMAGES` của playview.mjs.
   import `/app/game/playview.mjs`, `model.mjs`, `format.mjs` trong `javascript_tool`, dựng `PlayView` trên canvas riêng rồi
   gọi `update(1/60, …)` từng bước và `paint` (level lấy qua `/api/packs/<bộ>/levels/<số>` với `authHeaders()` của
   `/app/js/api.mjs`).
-- Heredoc của Git Bash hỏng với chuỗi có nhiều dấu nháy / backtick: ghi script ra scratchpad bằng Write rồi chạy node.
+- Heredoc của Git Bash hỏng với chuỗi có nhiều dấu nháy / backtick và ăn mất dấu gạch chéo ngược: ghi script ra scratchpad
+  bằng Write (tên file mới, scratchpad có thể còn file cũ cùng tên) rồi chạy node.
+- Ảnh chụp của khung trình duyệt bị thu nhỏ so với toạ độ CSS: khi giả lập chuột bằng `javascript_tool`, tính toạ độ từ
+  `getBoundingClientRect()` + `view.P(...)`, không lấy toạ độ trên ảnh chụp.

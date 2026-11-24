@@ -7,7 +7,7 @@
 // Art, âm thanh, font, mesh xe: game/web/art/ (node game/tools/unity_art.mjs <repo Unity>).
 import { Layout, polyAt, polyLength } from './layout.mjs';
 import { CarAnim, ease } from './carview.mjs';
-import { CarRenderer, loadCarMesh, SIN, COS } from './carmesh.mjs';
+import { CarRenderer, loadCarMesh, loadMesh, meshInfo, SIN, COS } from './carmesh.mjs';
 
 const ART = new URL('./art/', import.meta.url);
 export const artUrl = name => new URL(name, ART).href;
@@ -41,6 +41,7 @@ export function loadArt() {
   loading ??= Promise.all([
     ...IMAGES.map(n => new Promise(res => { const i = new Image(); i.onload = i.onerror = res; i.src = artUrl(`${n}.png`); img[n] = i; })),
     loadCarMesh(artUrl('car_mesh.json')),
+    loadMesh('sign', artUrl('sign_mesh.json')),
     (async () => { try { const f = new FontFace('PLMikado', `url(${artUrl('mikado.otf')})`); await f.load(); document.fonts.add(f); } catch { /* font hệ thống */ } })(),
   ]);
   return loading;
@@ -183,6 +184,7 @@ export class PlayView {
     this.popup = null; this.toast = null; this.countdown = null;
     this.combo = 0; this.lastClear = -99; this.clock = 0;
     this.warn = false; this.warnT = 0; this.warnK = 0; this.signFlash = 0; this.signColor = 'red';
+    this.sign = { used: -1, cap: -1, pulse: -1, shake: -1 };
     this.lane = []; this.endAt = 0; this.endState = ''; this.resultAt = 0;
     this.endgame = false;
     this.v = null; this.board = null;
@@ -241,7 +243,6 @@ export class PlayView {
     const L = this.L || new Layout(m);
     const rows = opts.rows ?? VISIBLE_LOT_ROWS;
     const b = L.boardBounds(rows);
-    b.x1 = Math.max(b.x1, m.W + 1.4);   // chừa chỗ cho biển số xe trên vòng
     const W = Math.floor(opts.wide ? maxW : Math.min(maxW, maxH * 0.62)), H = Math.floor(maxH);
     const topPad = opts.topPad ?? 0.05, botPad = opts.botPad ?? 0.02;
     const s = Math.min(W / (b.x1 - b.x0 + 0.6), H * (1 - topPad - botPad) / ((b.z1 - b.z0) * SIN + 0.3 * COS));
@@ -363,6 +364,7 @@ export class PlayView {
     if (on) { this.warnT = (this.warnT + dt) % 1.05; this.warnK = this.warnT < 0.4 ? ease.inOutSine(this.warnT / 0.4) : this.warnT < 0.8 ? 1 - ease.inOutSine((this.warnT - 0.4) / 0.4) : 0; }
     else this.warnK = Math.max(0, this.warnK - dt / 0.4);
     if (this.signFlash > 0) this.signFlash -= dt;
+    this.signStep(m, dt);
     if (this.popup) { this.popup.t += dt; if (this.popup.t >= this.popup.d) this.popup = null; }
     if (this.toast) { this.toast.t += dt; if (this.toast.t >= this.toast.d) this.toast = null; }
     if (this.countdown) {
@@ -370,7 +372,7 @@ export class PlayView {
       c.left -= dt; c.t += dt;
       const now = Math.ceil(c.left);
       if (c.left <= 0) { this.countdown = null; this.endState = 'lost'; this.endAt = this.clock; }
-      else if (now !== before) { c.n = now; c.t = 0; this.signFlash = 0.6; sound.play('noroom', 0.5, 0.8 + 0.1 * (3 - now)); }
+      else if (now !== before) { c.n = now; c.t = 0; this.flashSign('red'); sound.play('noroom', 0.5, 0.8 + 0.1 * (3 - now)); }
     }
     if (this.resultAt && this.clock >= this.resultAt) { this.resultAt = 0; this.endState = 'won'; this.endAt = this.clock; }
     for (let x = 0; x < m.W; x++) this.laneState(m, x, dt);
@@ -420,7 +422,7 @@ export class PlayView {
       case 'noroom':
         sound.play('noroom'); v?.denyIt();
         this.bumps.set(id, { t: 0, d: 0.3, shakeOnly: true });
-        this.signFlash = 0.6; this.signColor = 'red';
+        this.flashSign('red');
         this.shake(0.2);
         break;
       default: break;
@@ -447,7 +449,7 @@ export class PlayView {
         case 'shift':
           for (const b of m.buses) if (!b.out && b.x === e.col) { const v = this.views.get(b.carId); if (v) { v.maxSpeed = 8; v.onLanded = cv => { cv.squashIt(0.5); cv.onLanded = null; }; } }
           break;
-        case 'enter': this.views.get(e.id)?.punch(); if (m.loopCells() >= m.cap) { this.signFlash = 0.6; this.signColor = 'red'; } break;
+        case 'enter': this.views.get(e.id)?.punch(); if (m.loopCells() >= m.cap) { this.flashSign('red'); } break;
         case 'thaw': {
           const a = this.lane[e.col];
           if (e.left === 0) { const c = this.laneCenter(e.col); this.burst('ice', c.x, c.y, c.z); sound.play('bump', 0.6, 1.25); }
@@ -491,7 +493,7 @@ export class PlayView {
         case 'shuffle': for (const b of m.buses) if (!b.out) { const v = this.views.get(b.carId); v?.hopIt(0.55); if (v) v.hidden = b.hidden; } break;
         case 'revive':
           this.kick(0.05); this.showPopup(`Revive! Loop ${e.left}`, '#8cd9ff', 1.1);
-          this.signFlash = 0.6; this.signColor = 'blue';
+          this.flashSign('blue');
           for (const v of this.views.values()) v.punch();
           this.resetEnd();
           break;
@@ -506,7 +508,7 @@ export class PlayView {
           for (const v of this.views.values()) v.wobbleIt();
           this.countdown = { left: 3, n: 3, t: 0 };
           this.showToast('Out of moves!', 1.2);
-          this.signFlash = 0.6; this.signColor = 'red';
+          this.flashSign('red');
           sound.play('noroom', 0.5, 0.8);
           break;
         default: break;
@@ -767,6 +769,8 @@ export class PlayView {
           body: ps === 1 ? b : { ...b, sx: b.sx * ps, sy: b.sy * ps, sz: b.sz * ps } });
       }
       this.drawLaneBoxes(m, true);
+      const sg = this.signPos(m);
+      this.signMesh = !!sg && gl.drawMesh('sign', { x: sg.x, z: sg.z, roll: sg.roll });
       c.drawImage(gl.canvas, 0, 0, W, H);
     }
     // vật cản phủ lên xe, nhãn, chìa khoá, vật rèm
@@ -932,7 +936,74 @@ export class PlayView {
     }
   }
 
+  // ---------- bảng đếm vòng (ParkingLoopSign.cs, Sign-ConveyorCount) ----------
+  /** Sáng / lắc bảng như ParkingHud.FlashLoop: màu xanh (thêm chỗ: booster, hồi sinh) bắn hạt HitToSign, mọi lần đều lắc. */
+  flashSign(color) {
+    this.signFlash = 0.6; this.signColor = color;
+    this.sign.shake = 0;
+    if (color !== 'red') this.signHit();
+  }
+
+  signStep(m, dt) {
+    const g = this.sign, used = m.loopCells(), cap = m.cap;
+    if (g.used >= 0 && (used !== g.used || cap !== g.cap)) g.pulse = 0;   // SetCount: đổi số thì nảy chữ
+    g.used = used; g.cap = cap; g.W = m.W;
+    if (g.pulse >= 0 && (g.pulse += dt) >= 0.18) g.pulse = -1;
+    if (g.shake >= 0 && (g.shake += dt) >= 0.45) g.shake = -1;
+  }
+
+  /** Chân cột ở (W + 0.62, 0, -1.7) (LoopBadgeZ), trượt ngang để cả bảng nằm trong khung (m_ScreenMargin 0.03). */
+  signPos(m) {
+    const info = meshInfo('sign');
+    if (!info || !this.v) return null;
+    const { s, ox, W } = this.v, g = this.sign;
+    let x = m.W + 0.62;
+    const lo = ox + (x + info.lo[0]) * s, hi = ox + (x + info.hi[0]) * s, mg = 0.03 * W;
+    let shift = 0;
+    if (hi > W - mg) shift = W - mg - hi;
+    if (lo + shift < mg) shift = mg - lo;
+    x += shift / s;
+    const k = g.shake >= 0 ? g.shake / 0.45 : 1;
+    const roll = g.shake >= 0 ? Math.sin(g.shake * 40) * 9 * (1 - k) * Math.PI / 180 : 0;
+    return { x, z: -1.7, roll, info };
+  }
+
+  signHit() {
+    const p = this.signPos({ W: this.sign.W ?? 0 });
+    if (!p) return;
+    const [hx, hy, hz] = p.info.hit, x = p.x + hx, y = hy, z = p.z + hz;
+    this.fx.add({ kind: 'glow', x, y, z, life: 0.5, size: 1.6, alpha: 1, color: '#fff3a8' });
+    for (let i = 0; i < 14; i++) {
+      const a = rnd(0, TAU), sp = rnd(1.6, 3);
+      this.fx.add({ x, y, z, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 0, drag: 4, life: rnd(0.35, 0.55), size: rnd(0.07, 0.13),
+        color: i % 3 ? '#fff6c8' : '#ffd23f', shrink: 0.3 });
+    }
+  }
+
   drawSign(c, m) {
+    const p = this.signMesh && this.signPos(m);
+    if (p) {
+      // chữ used/cap trên mặt bảng (SlotAmountText): khung chữ theo mặt nghiêng của bảng, chữ trắng, vòng đầy thì đỏ và đập nhẹ
+      const g = this.sign, t = p.info.text, cr = Math.cos(p.roll), sr = Math.sin(p.roll);
+      const rz = ([vx, vy, vz]) => [vx * cr - vy * sr, vx * sr + vy * cr, vz];
+      const [cx, cy, cz] = rz(t.center), R = rz(t.right), U = rz(t.up);
+      const s = this.v.s, P = this.P, [px, py] = P(p.x + cx, cy, p.z + cz);
+      const [rx, ry] = P(p.x + cx + R[0], cy + R[1], p.z + cz + R[2]), [ux, uy] = P(p.x + cx + U[0], cy + U[1], p.z + cz + U[2]);
+      const wR = Math.hypot(...t.right), wU = Math.hypot(...t.up);
+      const used = m.loopCells(), cap = m.cap, full = cap > 0 && used >= cap;
+      let sc = 1;
+      if (g.pulse >= 0) { const u = g.pulse / 0.09; sc = u < 1 ? 1 + 0.18 * ease.outQuad(u) : 1 + 0.18 * (1 - ease.outQuad(u - 1)); }
+      if (full) { const q = (this.clock * 2 / 0.9) % 2; sc *= 1 + 0.06 * ease.inOutSine(q < 1 ? q : 2 - q); }
+      c.save();
+      c.transform((rx - px) / (wR * s), (ry - py) / (wR * s), -(ux - px) / (wU * s), -(uy - py) / (wU * s), px, py);
+      c.scale(sc, sc);
+      const text = `${used}/${cap}`;
+      c.font = `100px ${FONT}`;
+      const size = Math.min(wU * 0.78, wR * 0.92 * 100 / Math.max(1, c.measureText(text).width)) * s;
+      label(c, text, 0, 0, size, full ? '#ff594d' : '#ffffff');
+      c.restore();
+      return;
+    }
     const s = this.v.s, [x, y] = this.P(m.W + 0.62, 0, -1.7);
     const full = m.loopCells() >= m.cap, fl = this.signFlash > 0 ? Math.abs(((this.signFlash * 6) % 2) - 1) : 0;
     const i = img[full || (fl > 0.5 && this.signColor === 'red') ? 'loop_sign_full' : 'loop_sign'];
@@ -1002,6 +1073,36 @@ export class PlayView {
       const b = m.buses.find(o => o.x === e.linkFrom.x && o.y === e.linkFrom.y);
       if (b) { const p = this.L.busCenter(b), [x, y] = P(p.x, 0.3, p.z); c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(x, y, s * 0.45, 0, TAU); c.stroke(); }
     }
+    if (e.drag) this.drawDrag(c, m, e.drag);
+  }
+
+  /** Kéo xe trong Editor: khung ô nguồn, ô đích (vàng = thả được), xe "ma" theo con trỏ. */
+  drawDrag(c, m, d) {
+    const P = this.P, s = this.v.s, L = this.L;
+    const cellAt = h => {
+      if (!h) return null;
+      if (h.kind === 'lane') { const k = Math.min(h.slot, m.colCells(h.x)); return { x: h.x, z: m.H - m.hs[h.x] + k, w: 0.8, l: 0.92 }; }
+      if (h.kind === 'lot') { const n = m.buses.filter(b => b.x === h.ci).length, p = L.jp(h.ci, m.jh - 1 - Math.min(h.row, n)); return { x: p.x, z: p.z, w: 0.8, l: L.jc * 0.92 }; }
+      return null;
+    };
+    const box = (q, color, dash) => {
+      const [x0, y0] = P(q.x - q.w / 2, 0, q.z + q.l / 2), [x1, y1] = P(q.x + q.w / 2, 0, q.z - q.l / 2);
+      c.setLineDash(dash ? [s * 0.1, s * 0.07] : []); c.strokeStyle = color; c.lineWidth = Math.max(2, s * 0.06);
+      round(c, x0, y0, x1 - x0, y1 - y0, s * 0.14); c.stroke(); c.setLineDash([]);
+    };
+    const a = cellAt(d.src), b = cellAt(d.dst);
+    if (a) box(a, 'rgba(255,255,255,.85)', true);
+    if (b) { c.fillStyle = 'rgba(255,210,63,.25)'; const [x0, y0] = P(b.x - b.w / 2, 0, b.z + b.l / 2), [x1, y1] = P(b.x + b.w / 2, 0, b.z - b.l / 2); round(c, x0, y0, x1 - x0, y1 - y0, s * 0.14); c.fill(); box(b, '#ffd23f', false); }
+    // xe "ma": thân màu xe nhìn từ trên, viền trắng
+    const w = 0.62 * s, l = 0.8 * s * SIN;
+    c.save(); c.globalAlpha = 0.85; c.translate(d.sx, d.sy);
+    c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = s * 0.2; c.shadowOffsetY = s * 0.08;
+    c.fillStyle = d.car.hidden ? PALETTE['?'] : d.car.hex; round(c, -w / 2, -l / 2, w, l, s * 0.16); c.fill();
+    c.shadowColor = 'transparent';
+    c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(2, s * 0.04); c.stroke();
+    c.fillStyle = 'rgba(30,40,70,.55)'; round(c, -w * 0.36, -l * 0.18, w * 0.72, l * 0.32, s * 0.08); c.fill();
+    if (d.car.hidden) label(c, '?', 0, 0, s * 0.4, '#ffffff');
+    c.restore();
   }
 }
 

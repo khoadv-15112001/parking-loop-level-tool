@@ -6,16 +6,44 @@ Nhật ký để phiên Claude mới biết tool đang ở đâu. Đọc cùng `
 ## Trạng thái hiện tại
 
 - Nhánh `main`, push lên `origin` = `khoadv-15112001/parking-loop-level-tool`. Repo trong `SonatGameProduct` chờ techlead tạo.
-- Unity đã port tới `221fe53d` (24/11/2026) cả Core (luật) lẫn View (hình, chuyển động, VFX).
+- Unity đã port tới `923942cc` (24/11/2026) cả Core (luật) lẫn View (hình, chuyển động, VFX).
 - Changelog `game/web/releases.json`: bản 0.1.0 chưa tag (date trống).
 - **Chờ người dùng so với game thật** (chưa ai xem cạnh nhau trên máy):
   - Cảm giác chơi: tốc độ xe ra cổng, cua nhập vòng, trượt đuôi, nổ khi xoá làn, rung / zoom camera, popup combo.
   - Xe trong làn khoá nhô cao hơn thùng khoá (xe cao 0.66, thùng 0.49, đúng số đo trong code Unity), cần xem game có vậy không.
   - Độ sáng xe (xe đen hơi xám, xe ẩn gần trắng): đã khớp ảnh chụp game ở mức ≈1.7 lần màu gốc, chưa so nhiều màu.
   - Thùng hộp khoá, gara máy phát, rào, thang máy là bản vẽ gần đúng (khối hộp / sprite), không phải mesh 3D của game.
+  - Bảng đếm vòng 3D: cỡ, chỗ đặt, chỗ bắn hạt HitToSign (theo số trong scene; hạt nằm trước mặt bảng). Hạt chỉ là quầng +
+    chấm sáng, chưa phải prefab StarBurst / Spikes.
+  - Editor kéo-thả: mới thử bằng chuột giả lập trên level 7 (đổi chỗ làn ↔ làn, bãi → làn), chưa có người dùng thật thử.
 - Chưa làm: âm nhạc nền; haptic (web không có); chụp ảnh level vào server ("Chụp ảnh" của core cần bridge WebGL của game).
 
 ## Nhật ký
+
+### 24/11/2026 (khuya) — Bàn chơi lệch trái; hướng dẫn xếp level mới
+- Yêu cầu: màn hình game lệch trái; người dùng không biết cách xếp một level mới.
+- Lệch trái: `PlayView.fit` (và khung ảnh Editor / ảnh nhỏ trong ui.mjs) chừa thêm bên phải tới `W + 1.4` cho bảng đếm
+  vòng nên tâm khung lệch khỏi tâm bàn. Bỏ phần chừa: khung căn theo `boardBounds` (đối xứng quanh tâm vòng), bảng tự trượt
+  vào trong khung như `ParkingLoopSign.KeepOnScreen`.
+- Editor: khung "Cách xếp một level" (`helpPanel` trong ui.mjs): luật một câu, 6 bước (＋ Mới → Sửa → kích thước → đặt xe →
+  kéo xếp → vật cản → Giải / Chơi thử / Lưu) và danh sách kiểm tra theo level (có xe, mỗi màu chia hết Cao làn, không làn
+  quá Cao làn, đã Giải). Nút ✕ / ❔ để ẩn / hiện, nhớ ở localStorage `parkinglevel.help`.
+- Đã kiểm trên trình duyệt: level 8 ở Bàn chơi và Chơi thử nằm giữa; khung hướng dẫn hiện / ẩn. Chưa thử tạo level mới thật
+  (không muốn thêm level rác vào bộ develop).
+
+### 24/11/2026 (tối) — Gameplay Unity mới nhất (bảng đếm vòng 3D); Editor xếp level bằng kéo-thả
+- Yêu cầu: cập nhật tool theo gameplay mới của Parking Loop; tool xếp và chỉnh sửa được level.
+- Unity `221fe53d..923942cc`: chỉ đổi View (`ParkingLoopSign.cs` mới, `ParkingHud` dùng bảng thay LoopBadge, canvas
+  1440x3120). Core (luật) và Level_*.json không đổi.
+- Bảng đếm vòng: `unity_mesh.mjs` thêm `exportSignMesh` → `art/sign_mesh.json`; `carmesh.mjs` thêm `loadMesh` /
+  `drawMesh` (mesh phụ); `playview.mjs` vẽ bảng trong lượt WebGL, chữ 2D theo mặt nghiêng của bảng (`drawSign`),
+  `flashSign(color)` thay cho gán `signFlash` trực tiếp. Booster +1 vòng: toast "+1 loop slot", camera kick, bảng xanh.
+- Editor: `game/web/edit.mjs` mới (chuyển các hàm sửa raw ra khỏi ui.mjs, thêm `relayout`, `moveCar`, `shuffleColors`,
+  `colorCounts`); kéo-thả trên canvas (`editHit`, `editPointers`, `PlayView.drawDrag` vẽ ô nguồn / đích và xe "ma");
+  thanh Cao làn / Vòng / Trộn màu; chữ gợi ý của Giải chuyển vào tooltip nút.
+- Test: `game/tests/edit.test.mjs` (5 test), tổng 29 test xanh.
+- Đã kiểm trên trình duyệt: bảng 3D ở Editor và Chơi thử (lắc + hạt khi +1 vòng), kéo đổi chỗ, cao làn +, trộn màu, rồi
+  hoàn tác level 7 về r1 và nhả khoá.
 
 ### 24/11/2026 (chiều) — Hình, chuyển động, VFX như game; ảnh Editor / Thư viện; tài liệu bàn giao
 - Yêu cầu: hình preview chuẩn và đẹp như game; anim, VFX, feeling của chơi thử chuẩn như game; viết docs để phiên khác làm tiếp.

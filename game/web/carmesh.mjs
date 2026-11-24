@@ -56,6 +56,14 @@ export function loadCarMesh(url) {
   return meshLoading;
 }
 
+/** Mesh phụ (bảng đếm vòng…): đã nướng transform, gốc ở chân. */
+const extra = new Map(), extraLoading = new Map();
+export function loadMesh(name, url) {
+  if (!extraLoading.has(name)) extraLoading.set(name, fetch(url).then(r => r.json()).then(j => { extra.set(name, j); return j; }).catch(() => null));
+  return extraLoading.get(name);
+}
+export const meshInfo = name => extra.get(name) || null;
+
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
 // ---- ma trận 4x4 cột (như WebGL) ----
@@ -123,6 +131,47 @@ export class CarRenderer {
     this.cibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.cibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(ci), gl.STATIC_DRAW);
     this.subs = m.subs.map(s => ({ ...s, lin: s.color.map(toLin), emit: s.emission.map(toLin), rough: Math.max((1 - s.smoothness) ** 2, 0.0078) }));
     this.size = m.size; this.carWidth = m.car.width; this.uniform = m.car.uniformScale;
+    return true;
+  }
+
+  /** Buffer của mesh phụ (tạo lần đầu dùng). */
+  extraMesh(name) {
+    this.extras ??= new Map();
+    let e = this.extras.get(name);
+    if (e) return e;
+    const j = extra.get(name);
+    if (!j || !this.ready) return null;
+    const gl = this.gl, buf = (t, a) => { const b = gl.createBuffer(); gl.bindBuffer(t, b); gl.bufferData(t, a, gl.STATIC_DRAW); return b; };
+    e = {
+      v: buf(gl.ARRAY_BUFFER, new Float32Array(b64(j.pos).buffer)), n: buf(gl.ARRAY_BUFFER, new Int8Array(b64(j.nrm).buffer)),
+      i: buf(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(b64(j.idx).buffer)),
+      subs: j.subs.map(s => ({ ...s, rough: Math.max((1 - s.smoothness) ** 2, 0.0078) })),
+    };
+    this.extras.set(name, e);
+    this.bound = '';
+    return e;
+  }
+
+  /** Vẽ mesh phụ tại (x, y, z), quay roll (rad, quanh trục z của vật như Sign-Content), phóng scale. */
+  drawMesh(name, o) {
+    const e = this.extraMesh(name);
+    if (!e) return false;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, e.v); gl.vertexAttribPointer(this.aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, e.n); gl.vertexAttribPointer(this.aNrm, 3, gl.BYTE, true, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, e.i);
+    this.bound = name;
+    let M = mul(T(o.x, o.y || 0, o.z), RZ(o.roll || 0));
+    if (o.scale && o.scale !== 1) M = mul(M, S(o.scale, o.scale, o.scale));
+    gl.uniformMatrix4fv(this.loc.uM, false, new Float32Array(M));
+    gl.uniformMatrix3fv(this.loc.uN, false, new Float32Array(normalMat(M)));
+    gl.uniform1f(this.loc.uAlpha, 1);
+    gl.uniform3f(this.loc.uEmit, 0, 0, 0);
+    for (const s of e.subs) {
+      gl.uniform3f(this.loc.uAlbedo, s.color[0], s.color[1], s.color[2]);
+      gl.uniform1f(this.loc.uRough, s.rough);
+      gl.drawElements(gl.TRIANGLES, s.count, gl.UNSIGNED_SHORT, s.start * 2);
+    }
     return true;
   }
 

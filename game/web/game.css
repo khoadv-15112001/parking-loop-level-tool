@@ -8,6 +8,12 @@
 .pl-tools { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .pl-tool { width: 30px; height: 30px; border: 1px solid var(--lc-border); border-radius: 6px; background: var(--lc-surface); cursor: pointer; font-size: 15px; }
 .pl-tool.on { outline: 2px solid var(--lc-accent); background: var(--lc-sel); }
+.pl-levelbar { gap: 8px; margin-top: 2px; }
+.pl-levelbar > button { height: 28px; padding: 0 10px; border: 1px solid var(--lc-border); border-radius: 6px; background: var(--lc-surface); cursor: pointer; }
+.pl-step { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border: 1px solid var(--lc-border); border-radius: 6px; background: var(--lc-surface); font-size: 13px; }
+.pl-step button { width: 24px; height: 24px; border: 0; border-radius: 4px; background: var(--lc-sel, rgba(0,0,0,.06)); cursor: pointer; font-weight: 700; }
+.pl-step b { min-width: 18px; text-align: center; }
+.pl-edit-canvas { touch-action: none; user-select: none; }
 .pl-sep { width: 1px; align-self: stretch; background: var(--lc-border); margin: 0 4px; }
 .pl-swatch { width: 26px; height: 26px; border-radius: 6px; border: 2px solid rgba(0,0,0,.15); background: var(--c); cursor: pointer; padding: 0; position: relative; }
 .pl-swatch span { font-size: 9px; color: rgba(0,0,0,.55); position: absolute; right: 2px; bottom: 0; }
@@ -75,3 +81,12 @@
 @keyframes pl-bob { 50% { transform: translateY(-4px); } }
 .pl-root.pl-focus { position: fixed; inset: 0; z-index: 1000; background: var(--lc-bg, #f4f5fb); padding: 12px; }
 .pl-root.pl-focus .pl-modes { justify-content: center; }
+.pl-help { border: 1px solid var(--lc-border); border-left: 4px solid var(--lc-accent); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; background: var(--lc-surface); }
+.pl-help-head { display: flex; justify-content: space-between; align-items: center; }
+.pl-help-head button { border: 0; background: none; cursor: pointer; font-size: 14px; }
+.pl-help p, .pl-help ol { margin: 4px 0; }
+.pl-help ol { padding-left: 20px; }
+.pl-help li { margin: 2px 0; }
+.pl-check { list-style: none; padding: 6px 0 0; margin: 0; border-top: 1px dashed var(--lc-border); display: grid; gap: 2px; }
+.pl-check .ok { color: #2e9d55; }
+.pl-check .todo { color: #c77a12; }
