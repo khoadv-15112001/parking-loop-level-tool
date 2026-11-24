@@ -1,0 +1,14 @@
+[
+  {
+    "version": "0.1.0",
+    "date": "",
+    "title": "Bản đầu của ParkingLevel: editor, chơi thử và giải level",
+    "added": [
+      "Danh sách level: tìm theo số, dải số và chữ không dấu; tạo, nhân bản, sửa, lưu, xem lịch sử.",
+      "Nhập bộ level từ zip và xem trước level nào tạo mới, cập nhật hay xung đột.",
+      "Editor: tô xe trong làn và bãi, xe ẩn, chìa khoá, hộp khoá, máy phát, nối xe và vật cản của làn.",
+      "Chơi thử: chơi level ngay trong tool với hình, hiệu ứng và âm thanh của game; có booster, hoàn tác, toàn màn hình.",
+      "Giải: tìm thứ tự bấm thắng được, báo level không thể xoá hết và chạy lại lời giải."
+    ]
+  }
+]

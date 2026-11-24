@@ -1,0 +1,76 @@
+{
+  "tool": "ParkingLevel",
+  "game": "Parking Loop",
+  "prefix": "PARKINGLEVEL",
+  "slug": "parkingloop",
+  "storagePrefix": "parkinglevel",
+  "formatVersion": 1,
+  "rules": "web/rules.mjs",
+  "web": "web",
+  "defaultPacks": [
+    "develop",
+    "product"
+  ],
+  "biAppId": "",
+  "webgame": {
+    "id": "parkinglevel-game",
+    "tag": "PARKINGLEVEL"
+  },
+  "layout": {
+    "game": "tab",
+    "form": "right"
+  },
+  "overview": {
+    "group": "variant",
+    "metric": "cars"
+  },
+  "levelhub": {
+    "acronym": "PL",
+    "obstacleCodes": [
+      [
+        "Barrier",
+        "BR"
+      ],
+      [
+        "ColoredLane",
+        "CL"
+      ],
+      [
+        "IcedLane",
+        "IC"
+      ],
+      [
+        "Curtain",
+        "CU"
+      ],
+      [
+        "Lock",
+        "LK"
+      ],
+      [
+        "LockBox",
+        "LB"
+      ],
+      [
+        "Generator",
+        "GN"
+      ],
+      [
+        "Elevator",
+        "EL"
+      ],
+      [
+        "Key",
+        "KY"
+      ],
+      [
+        "Link",
+        "LN"
+      ],
+      [
+        "Hidden",
+        "HD"
+      ]
+    ]
+  }
+}

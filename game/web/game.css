@@ -1,0 +1,74 @@
+/* Parking Loop: editor bàn chơi + chơi thử (game/web/ui.mjs). Màu bàn theo ParkingPalette.cs của bản Unity. */
+.pl-root { --pl-ground: #7d84c7; --pl-road: #5c62a8; --pl-bed: #4a4f93; --pl-slot: #50559c; display: flex; flex-direction: column; gap: 8px; padding: 8px; min-height: 100%; box-sizing: border-box; }
+.pl-modes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pl-modes > button, .pl-playbar button, .pl-panel button { padding: 4px 10px; border: 1px solid var(--lc-border); border-radius: 6px; background: var(--lc-surface); color: var(--lc-text); cursor: pointer; font: inherit; }
+.pl-modes > button.on, .pl-playbar button.on { background: var(--lc-accent); color: var(--lc-accent-text); border-color: var(--lc-accent); }
+.pl-solve { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: 8px; flex: 1; min-width: 0; }
+.pl-taps { flex-basis: 100%; font-family: ui-monospace, monospace; color: var(--lc-muted); max-height: 3.2em; overflow: auto; }
+.pl-tools { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pl-tool { width: 30px; height: 30px; border: 1px solid var(--lc-border); border-radius: 6px; background: var(--lc-surface); cursor: pointer; font-size: 15px; }
+.pl-tool.on { outline: 2px solid var(--lc-accent); background: var(--lc-sel); }
+.pl-sep { width: 1px; align-self: stretch; background: var(--lc-border); margin: 0 4px; }
+.pl-swatch { width: 26px; height: 26px; border-radius: 6px; border: 2px solid rgba(0,0,0,.15); background: var(--c); cursor: pointer; padding: 0; position: relative; }
+.pl-swatch span { font-size: 9px; color: rgba(0,0,0,.55); position: absolute; right: 2px; bottom: 0; }
+.pl-swatch.on { outline: 3px solid var(--lc-accent); outline-offset: 1px; }
+.pl-board { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--pl-ground); border-radius: 12px; padding: 14px 10px; }
+.pl-ring { background: var(--pl-road); border-radius: 22px; padding: 18px 22px; }
+.pl-lanes { display: flex; gap: 6px; align-items: flex-end; background: var(--pl-bed); padding: 6px; border-radius: 8px; }
+.pl-lane { display: flex; flex-direction: column; gap: 4px; align-items: center; border-radius: 6px; padding: 2px; }
+.pl-lane.sel { outline: 2px solid #ffd34d; }
+.pl-lane-head { color: #fff; font-size: 11px; cursor: pointer; display: flex; gap: 2px; align-items: center; min-height: 16px; flex-wrap: wrap; justify-content: center; max-width: 44px; }
+.pl-tag { font-style: normal; font-size: 11px; border-radius: 4px; padding: 0 2px; background: var(--c, rgba(255,255,255,.2)); }
+.pl-cell { width: 36px; height: 36px; border-radius: 7px; border: 1px solid rgba(0,0,0,.25); background: var(--c, var(--pl-slot)); cursor: pointer; padding: 0; color: #fff; font-weight: 700; font-size: 14px; position: relative; display: flex; align-items: center; justify-content: center; }
+.pl-cell.empty { background: var(--pl-slot); border-style: dashed; border-color: rgba(255,255,255,.2); }
+.pl-cell.dark { color: #333; }
+.pl-cell.hid { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 4px, transparent 4px 8px); }
+.pl-cell:hover { filter: brightness(1.12); }
+.pl-cell.unit.box { color: #fff; }
+.pl-cell.unit.linked { outline: 2px dashed #fff; outline-offset: -4px; }
+.pl-cell.unit.linkfrom { outline: 3px solid #ffd34d; }
+.pl-obj { position: absolute; right: -3px; top: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--c); border: 1px solid #fff; }
+.pl-over { color: #ffd34d; font-size: 11px; }
+.pl-add { width: 30px; height: 30px; border-radius: 50%; border: 1px dashed rgba(255,255,255,.6); background: transparent; color: #fff; cursor: pointer; align-self: center; }
+.pl-addunit { background: transparent; border: 1px dashed rgba(255,255,255,.4); color: rgba(255,255,255,.7); }
+.pl-loopinfo { color: #fff; font-size: 12px; opacity: .9; }
+.pl-lot { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; justify-content: center; background: rgba(0,0,0,.1); padding: 8px; border-radius: 8px; }
+.pl-col { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.pl-col-head { color: #fff; font-size: 11px; }
+.pl-panel { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 8px; border: 1px solid var(--lc-border); border-radius: 8px; background: var(--lc-surface); }
+.pl-panel label { display: inline-flex; gap: 4px; align-items: center; }
+.pl-panel input[type=number] { width: 52px; }
+.pl-panel .danger { color: var(--lc-err); }
+.pl-btns { display: inline-flex; gap: 4px; }
+.pl-stats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pl-count { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; padding: 1px 6px; border-radius: 10px; background: var(--lc-surface-2); }
+.pl-count i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); border: 1px solid rgba(0,0,0,.2); }
+.pl-count.bad { outline: 1px solid var(--lc-err); color: var(--lc-err); }
+.pl-edit { display: flex; flex-direction: column; gap: 8px; }
+/* Chơi thử: bàn chơi ở giữa khung, HUD trên, booster dưới như trong game; ⛶ phủ cả cửa sổ. */
+.pl-root.pl-play-mode { height: 100%; }
+.pl-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pl-playbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: center; }
+.pl-hud { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; min-height: 40px; font-family: PLMikado, system-ui, sans-serif; }
+.pl-hud-lv { font-size: 18px; color: var(--lc-text); }
+.pl-hud-item { padding: 3px 10px; border-radius: 12px; background: var(--lc-surface-2); font-size: 14px; }
+.pl-hud-item.over { color: var(--lc-err); }
+.pl-sign { width: 62px; height: 48px; display: inline-flex; align-items: center; justify-content: center; background-size: contain; background-repeat: no-repeat; background-position: center; color: #fff; font-size: 17px; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.pl-sign.shake { animation: pl-shake .45s; }
+@keyframes pl-shake { 0%, 100% { transform: none; } 20% { transform: translateX(-5px) rotate(-4deg); } 40% { transform: translateX(5px) rotate(4deg); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); } }
+.pl-armed { color: var(--lc-accent); font-weight: 600; font-family: system-ui, sans-serif; font-size: 13px; }
+.pl-canvas-wrap { flex: 1; min-height: 320px; width: 100%; display: flex; align-items: center; justify-content: center; position: relative; }
+.pl-canvas { cursor: pointer; border-radius: 16px; box-shadow: 0 6px 24px rgba(30, 30, 80, .25); display: block; }
+.pl-log { position: absolute; right: 0; top: 0; width: 220px; max-height: 100%; overflow: auto; margin: 0; padding: 8px 8px 8px 26px; border: 1px solid var(--lc-border); border-radius: 8px; background: var(--lc-surface); color: var(--lc-muted); font-size: 12px; box-sizing: border-box; }
+.pl-boosters { display: flex; gap: 14px; justify-content: center; padding: 4px 18px 2px; border-radius: 22px; background: linear-gradient(#5d67c9, #4650ad); box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
+.pl-boost { position: relative; width: 64px; height: 74px; border: 0; background: none; padding: 0; cursor: pointer; transition: transform .12s; }
+.pl-boost:hover { transform: translateY(-2px) scale(1.04); }
+.pl-boost:active { transform: scale(.94); }
+.pl-boost-bg { position: absolute; left: 4px; top: 2px; width: 56px; height: 56px; }
+.pl-boost-icon { position: absolute; left: 13px; top: 9px; width: 38px; height: 38px; object-fit: contain; filter: drop-shadow(0 2px 1px rgba(0,0,0,.3)); }
+.pl-boost span { position: absolute; left: 0; right: 0; bottom: 0; color: #fff; font: 12px PLMikado, system-ui, sans-serif; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.pl-boost.on .pl-boost-bg { filter: drop-shadow(0 0 6px #ffe066) drop-shadow(0 0 4px #ffe066); }
+.pl-boost.on { animation: pl-bob 0.9s ease-in-out infinite; }
+@keyframes pl-bob { 50% { transform: translateY(-4px); } }
+.pl-root.pl-focus { position: fixed; inset: 0; z-index: 1000; background: var(--lc-bg, #f4f5fb); padding: 12px; }
+.pl-root.pl-focus .pl-modes { justify-content: center; }
