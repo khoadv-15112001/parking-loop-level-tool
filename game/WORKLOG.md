@@ -27,7 +27,8 @@ Nhật ký để phiên Claude mới biết tool đang ở đâu. Đọc cùng `
   vào trong khung như `ParkingLoopSign.KeepOnScreen`.
 - Editor: khung "Cách xếp một level" (`helpPanel` trong ui.mjs): luật một câu, 6 bước (＋ Mới → Sửa → kích thước → đặt xe →
   kéo xếp → vật cản → Giải / Chơi thử / Lưu) và danh sách kiểm tra theo level (có xe, mỗi màu chia hết Cao làn, không làn
-  quá Cao làn, đã Giải). Nút ✕ / ❔ để ẩn / hiện, nhớ ở localStorage `parkinglevel.help`.
+  quá Cao làn, đã Giải). Mặc định đóng (người dùng không muốn tự mở), bấm nút "❔ Hướng dẫn" cạnh 🧠 Giải mới hiện, ✕ để
+  đóng; không nhớ trạng thái mở.
 - Đã kiểm trên trình duyệt: level 8 ở Bàn chơi và Chơi thử nằm giữa; khung hướng dẫn hiện / ẩn. Chưa thử tạo level mới thật
   (không muốn thêm level rác vào bộ develop).
 

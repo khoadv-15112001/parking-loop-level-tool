@@ -33,7 +33,7 @@ const TOOLS = [
 function renderEditor(ctx) {
   const st = {
     level: ctx.level, editable: ctx.editable, mode: 'edit', tool: 'paint', color: 'R', lane: -1, linkFrom: null,
-    play: null, solve: null, worker: null, help: helpPref(),
+    play: null, solve: null, worker: null, help: false,
   };
   const root = document.createElement('div');
   root.className = 'pl-root';
@@ -184,12 +184,8 @@ function renderEditor(ctx) {
     changed();
   }
 
-  // ---------- hướng dẫn xếp level (mở / đóng nhớ theo trình duyệt) ----------
-  function setHelp(on) {
-    st.help = on;
-    try { localStorage.setItem('parkinglevel.help', on ? '1' : '0'); } catch { /* không lưu được */ }
-    draw();
-  }
+  // ---------- hướng dẫn xếp level: luôn đóng khi mở Editor, bấm nút ❔ Hướng dẫn mới hiện ----------
+  function setHelp(on) { st.help = on; draw(); }
 
   function helpPanel(raw, conv) {
     if (!st.help) return '';
@@ -720,7 +716,7 @@ function renderEditor(ctx) {
     const tabs = `<div class="pl-modes">
       <button data-mode="edit" class="${st.mode === 'edit' ? 'on' : ''}">✎ Bàn chơi</button>
       <button data-mode="play" class="${st.mode === 'play' ? 'on' : ''}" title="Chơi thử ngay trong tool bằng luật của game (phím R)">▶ Chơi thử</button>
-      <span class="pl-solve">${solveHtml()}</span>${st.solve?.running ? '' : '<button data-act="solve" title="Tìm thứ tự bấm thắng được: thử mọi thứ tự bấm (bấm rồi chờ vòng đứng yên), như Check Solvable của Unity (phím K)">🧠 Giải</button>'}${st.mode === 'edit' && !st.help ? '<button data-act="help" title="Cách xếp một level">❔</button>' : ''}</div>`;
+      <span class="pl-solve">${solveHtml()}</span>${st.solve?.running ? '' : '<button data-act="solve" title="Tìm thứ tự bấm thắng được: thử mọi thứ tự bấm (bấm rồi chờ vòng đứng yên), như Check Solvable của Unity (phím K)">🧠 Giải</button>'}${st.mode === 'edit' && !st.help ? '<button data-act="help" title="Cách xếp một level mới">❔ Hướng dẫn</button>' : ''}</div>`;
     root.classList.toggle('pl-play-mode', st.mode === 'play');
     root.innerHTML = tabs + (st.mode === 'play' && st.play ? playHtml() : `<div class="pl-edit">${drawEdit()}</div>`);
     if (st.mode === 'play') {
@@ -826,7 +822,6 @@ function renderEditor(ctx) {
 }
 
 let current = null;
-const helpPref = () => { try { return localStorage.getItem('parkinglevel.help') !== '0'; } catch { return true; } };
 
 // ───────────────────────────── ảnh nhỏ (Thư viện, Thứ tự) ─────────────────────────────
 // rules.thumbnail trả SVG ngay; trên trình duyệt hook này đánh dấu SVG rồi vẽ lần lượt ảnh như màn Chơi thử (playview.mjs)
