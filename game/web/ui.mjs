@@ -6,6 +6,7 @@ import {
 } from './format.mjs';
 import { ParkingModel } from './model.mjs';
 import { PlayView, artUrl, loadArt, sound } from './playview.mjs';
+import { COS, SIN } from './carmesh.mjs';
 import { levelSummary, mechanicsOf } from './rules.mjs';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -223,6 +224,15 @@ function renderEditor(ctx) {
       h += [...CODES].map((ch, i) => `<button class="pl-swatch${st.color === ch ? ' on' : ''}" data-color="${ch}" title="${i + 1} ${esc(COLOR_VN[i + 1])}" style="--c:${COLOR_HEX[i + 1]}"><span>${i + 1}</span></button>`).join('');
       h += '</div>';
     }
+    if (conv) {
+      // Ảnh bàn chơi vẽ như game (playview.mjs); bấm ô làn / xe bãi để sửa, bấm đầu làn (sát đường trên) để chọn làn.
+      h += `<div class="pl-preview"><canvas class="pl-edit-canvas"></canvas>
+        ${ed ? '<div class="pl-preview-btns"><button data-act="addlane" title="Thêm làn">＋ Làn</button><button data-act="addcol" title="Thêm cột bãi">＋ Cột bãi</button></div>' : ''}
+        <div class="pl-loopinfo">Vòng: <b>${conv.loop}</b> chỗ${n.pf.tl ? '' : ' (mặc định)'}${ed ? ' · chuột phải = bật / tắt xe ẩn · bấm đầu làn để sửa vật cản' : ''}</div></div>`;
+      h += lanePanel(lanes);
+      h += statsPanel(raw, conv);
+      return h;
+    }
     // làn: ô trên = xe vào sau cùng (đỉnh làn, sát vòng trên); dưới = se[0] (ra trước)
     h += `<div class="pl-board"><div class="pl-ring"><div class="pl-lanes" style="--w:${lanes.length}">`;
     lanes.forEach((lane, li) => {
@@ -323,13 +333,16 @@ function renderEditor(ctx) {
     if (!lv) { ctx.toast?.(`Không chơi được: ${error}`); st.mode = 'edit'; return draw(); }
     stopPlay();
     const m = new ParkingModel(lv);
+    const view = new PlayView();
+    view.level = Number(ctx.name) || 0;
+    view.reset(m);
     st.play = {
-      lv, m, prev: new Map(), transit: [], history: [], speed: st.play?.speed || 1, paused: false, armed: null, res: null, resAt: 0,
+      lv, m, history: [], speed: st.play?.speed || 1, paused: false, armed: null, res: null,
       t0: performance.now(), last: performance.now(), acc: 0, taps: 0, boosters: 0, log: [], auto: null, raf: 0, rec: null,
-      view: new PlayView(), showLog: st.play?.showLog ?? false,
+      view, showLog: st.play?.showLog ?? false,
     };
     root.classList.toggle('pl-focus', focusPref());
-    loadArt().then(() => paint());
+    loadArt().then(() => { if (st.play?.view === view) { view.board = null; paint(); } });
     sound.preload();
     snapshot();
     record('start');
@@ -364,35 +377,28 @@ function renderEditor(ctx) {
     } catch { /* ghi lượt chơi lỗi (server Python, mất mạng): vẫn chơi bình thường */ }
   }
 
-  function snapshot() { st.play.history.push({ m: st.play.m.clone(), transit: st.play.transit.map(t => ({ ...t })) }); if (st.play.history.length > 200) st.play.history.shift(); }
+  function snapshot() { const p = st.play; p.history.push({ m: p.m.clone(), transits: p.view.transitState() }); if (p.history.length > 200) p.history.shift(); }
 
-  function step() {
-    const p = st.play, m = p.m;
-    p.prev = new Map(m.loop.map(k => [k.id, k.st]));
-    for (const t of p.transit) t.left--;
-    const arrived = p.transit.filter(t => t.left <= 0);
-    p.transit = p.transit.filter(t => t.left > 0);
-    for (const t of arrived) m.deliver(t.car);
-    m.tick();
-    drain();
-  }
+  function step() { st.play.m.tick(); drain(); }
 
   function drain() {
     const p = st.play, m = p.m;
+    if (!m.events.length) return;
     const say = {
       clear: e => `Xoá làn ${e.col + 1} (${e.c})`, unlock: e => `Mở khoá làn ${e.col + 1}`, thaw: e => (e.left ? '' : `Băng làn ${e.col + 1} tan`),
       barrier: e => `Rào đóng làn ${e.col + 1}`, key: () => 'Nhả chìa khoá', unbox: () => 'Mở hộp khoá', curtain: e => (e.left ? '' : `Rèm làn ${e.col + 1} mở`),
       rise: e => `Thang máy làn ${e.col + 1} lên`, emit: () => 'Máy phát nhả xe', won: () => 'THẮNG', lost: () => 'THUA', objLost: () => 'Vật rèm bị mất',
     };
-    p.view.onEvents(m.events, m);
-    for (const e of m.events) {
+    const events = m.events;
+    m.events = [];
+    p.view.onEvents(events, m);
+    for (const e of events) {
       const text = say[e.t]?.(e);
       if (text) p.log.unshift(`${m.ticks}: ${text}`);
       if (['clear', 'unlock', 'barrier', 'key', 'unbox', 'rise', 'won', 'lost'].includes(e.t)) record('event', { type: e.t, col: e.col, c: e.c, tick: m.ticks });
       if (e.t === 'won' || e.t === 'lost') record('end', e.t === 'won' ? 'win' : 'lose');
     }
     p.log.length = Math.min(p.log.length, 40);
-    m.events = [];
   }
 
   function tapUnit(id) {
@@ -401,24 +407,25 @@ function renderEditor(ctx) {
     if (p.armed === 'hand') {
       snapshot();
       const r = m.pushOut(id);
+      p.view.tapped(m, id, r);
       if (r.r !== 'released') { p.history.pop(); return flash(r.r, { ...r, bus: id }); }
       p.armed = null; p.boosters++; record('cheat');
-      return sendCars(r, 0);
+      return sendCars(r);
     }
-    const before = m.clone();
+    const before = m.clone(), transits = p.view.transitState();
     const r = m.tap(id);
+    p.view.tapped(m, id, r);
     if (r.r !== 'released') return flash(r.r, { ...r, bus: id });
-    p.history.push({ m: before, transit: p.transit.map(t => ({ ...t })) });
+    p.history.push({ m: before, transits });
     p.taps++;
     record('event', { type: 'tap', col: before.buses[id].x, c: before.buses[id].c, tick: m.ticks });
-    sendCars(r, r.travel);
+    sendCars(r);
   }
 
-  function sendCars(r, travel) {
+  function sendCars(r) {
     const p = st.play, m = p.m;
-    const cars = [r.car, ...(r.extra || [])].filter(Boolean);
-    p.view.onTap(m, r);
-    for (const c of cars) { const total = 2 + Math.min(6, travel); p.transit.push({ car: c, left: total, total, from: p.view.carOrigin(m, c.id) }); }
+    p.view.startTransit(m, r.bus, r.car);
+    (r.extraBus || []).forEach((b, k) => p.view.startTransit(m, b, r.extra[k]));
     drain();
     hud();
   }
@@ -427,8 +434,8 @@ function renderEditor(ctx) {
     const p = st.play;
     const msg = { blocked: 'Xe phía trước chặn', noroom: 'Vòng hết chỗ', locked: 'Không bấm được (hộp khoá / máy phát / đang chờ)', linked: 'Nhóm nối chưa ra được', frozen: 'Đang đóng băng', empty: 'Làn trống', clearing: 'Làn đang xoá' }[r] || r;
     p.log.unshift(`${p.m.ticks}: ✗ ${msg}`);
-    p.res = res || null; p.resAt = performance.now() / 1000;
-    p.view.onFail(r, res, p.m);
+    p.res = res || null;
+    if (!res) { sound.play('bump'); p.view.showToast(msg, 1.5); }
     hud();
   }
 
@@ -436,10 +443,14 @@ function renderEditor(ctx) {
     const p = st.play, m = p.m;
     if (kind === 'undo') {
       const h = p.history.pop();
-      if (h) { p.m = h.m.clone(); p.transit = h.transit; p.prev = new Map(); p.view.resetEnd(); record('cheat'); }
+      if (h) { p.m = h.m.clone(); p.acc = 0; p.view.reset(p.m, h.transits, false); record('cheat'); }
       return hud();
     }
-    if (kind === 'loop') { if (m.state === 'lost') { m.revive(1); p.view.resetEnd(); } else m.addLoop(1); p.boosters++; record('cheat'); drain(); return hud(); }
+    if (kind === 'loop') {
+      if (m.state === 'lost') { if (!m.canReviveHelp(1)) return flash('Hồi sinh không cứu được'); m.revive(1); }
+      else { m.addLoop(1); p.view.showPopup('+1 Loop', '#8cd9ff', 0.9); p.view.signFlash = 0.6; p.view.signColor = 'blue'; }
+      p.boosters++; record('cheat'); drain(); return hud();
+    }
     if (kind === 'shuffle') { snapshot(); const n = m.shuffleLot(); if (!n) { p.history.pop(); return flash('Không có gì để xáo'); } p.boosters++; record('cheat'); drain(); return hud(); }
     p.armed = p.armed === kind ? null : kind;
     hud();
@@ -449,12 +460,18 @@ function renderEditor(ctx) {
     const p = st.play;
     if (!p || st.mode !== 'play') return;
     const now = performance.now();
-    if (!p.paused && p.m.state === 'play') {
-      p.acc += (now - p.last) * p.speed;
-      let n = 0;
-      while (p.acc >= TICK_MS && n++ < 20) { p.acc -= TICK_MS; step(); autoTap(); }
-    }
+    const dt = p.paused ? 0 : Math.min(0.05, (now - p.last) / 1000) * p.speed;
     p.last = now;
+    const m = p.m, tickMs = TICK_MS / (p.view.endgame ? 1.4 : 1);
+    // Như game: băng chuyền dừng khi booster đang chờ chọn mục tiêu.
+    if (dt > 0 && m.state === 'play' && !p.armed) {
+      p.acc += dt * 1000;
+      let n = 0;
+      while (p.acc >= tickMs && n++ < 20) { p.acc -= tickMs; step(); if (p.m.state !== 'play') break; }
+    }
+    const arrived = p.view.update(dt, p.m, Math.min(1, p.acc / tickMs), dt > 0);
+    for (const car of arrived) { p.m.deliver(car); drain(); }
+    autoTap();
     paint();
     if ((p.hudAt || 0) + 200 < now) hud();
     p.raf = requestAnimationFrame(loop);
@@ -463,7 +480,7 @@ function renderEditor(ctx) {
   /** Xem lời giải: bấm xe kế tiếp khi vòng đã đứng yên (như solver). */
   function autoTap() {
     const p = st.play;
-    if (!p.auto || p.m.state !== 'play' || p.transit.length || !p.m.isSettled()) return;
+    if (!p.auto || p.m.state !== 'play' || p.view.transits.length || !p.m.isSettled()) return;
     const id = p.auto.shift();
     if (id === undefined) { p.auto = null; return; }
     tapUnit(id);
@@ -498,11 +515,9 @@ function renderEditor(ctx) {
     const p = st.play, el = root.querySelector('.pl-hud');
     if (!p || !el) return;
     p.hudAt = performance.now();
-    const m = p.m, full = m.loopCells() >= m.cap, lt = normalize(st.level).lt;
+    const m = p.m, lt = normalize(st.level).lt;
     const secs = m.ticks * TICK_MS / 1000;
-    const shake = p.view.signShake && performance.now() / 1000 - p.view.signShake < 0.5 ? ' shake' : '';
     const html = `<span class="pl-hud-lv">Level ${esc(ctx.name ?? '')}</span>
-      <span class="pl-sign${full ? ' full' : ''}${shake}" style="background-image:url(${artUrl(full ? 'loop_sign_full.png' : 'loop_sign.png')})" title="Xe trên vòng / số chỗ">${m.loopCells()}/${m.cap}</span>
       <span class="pl-hud-item" title="Xe còn lại">🚗 ${m.carsLeft()}</span>
       <span class="pl-hud-item" title="Số lần bấm${p.boosters ? ' · booster' : ''}">👆 ${p.taps}${p.boosters ? ` · ⚡${p.boosters}` : ''}</span>
       <span class="pl-hud-item${lt && secs > lt ? ' over' : ''}" title="Thời gian${lt ? ` / giới hạn ${lt} s` : ''}">⏱ ${secs.toFixed(1)}${lt ? `/${lt}` : ''} s</span>
@@ -519,34 +534,80 @@ function renderEditor(ctx) {
     const cv = root.querySelector('.pl-canvas'), wrap = root.querySelector('.pl-canvas-wrap');
     if (!cv || !wrap) return;
     const m = p.m, view = p.view, dpr = window.devicePixelRatio || 1;
-    const g = view.layout(m, Math.max(240, wrap.clientWidth - 8), Math.max(300, wrap.clientHeight - 8));
+    const g = view.fit(m, Math.max(240, wrap.clientWidth - 8), Math.max(300, wrap.clientHeight - 8));
     if (cv.width !== Math.round(g.W * dpr) || cv.height !== Math.round(g.H * dpr)) {
       cv.width = Math.round(g.W * dpr); cv.height = Math.round(g.H * dpr);
       cv.style.width = `${g.W}px`; cv.style.height = `${g.H}px`;
     }
     const c = cv.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const hint = p.auto?.length ? p.auto[0] : null;
-    cv._hit = view.paint(c, m, {
-      prev: p.prev, transit: p.transit, phase: p.paused || m.state !== 'play' ? 1 : Math.min(1, p.acc / TICK_MS), hint, res: p.res, resAt: p.resAt,
-      taps: p.taps, boosters: p.boosters, seconds: m.ticks * TICK_MS / 1000, canRevive: m.state === 'lost' && m.canReviveHelp(2),
-    });
+    const secs = m.ticks * TICK_MS / 1000;
+    const summary = m.state === 'won' ? `${p.taps} lần bấm · ${secs.toFixed(1)} s${p.boosters ? ` · ${p.boosters} booster` : ''}`
+      : m.state === 'lost' ? (m.canReviveHelp(1) ? 'Bấm “+1 chỗ” để hồi sinh' : 'Hồi sinh không cứu được') : '';
+    cv._hit = view.paint(c, m, { dpr, hint: p.auto?.length ? p.auto[0] : null, summary });
   }
 
   function canvasClick(ev) {
     const cv = ev.currentTarget, hit = cv._hit, p = st.play;
     if (!hit || !p) return;
     const r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+    sound.ctx();
     if (p.armed === 'hammer') {
-      const lane = hit.lanes.findIndex(([[tx, ty], [, by]]) => Math.abs(x - tx) < hit.s / 2 && y > ty - hit.s / 2 && y < by + hit.s / 2);
+      const lane = hit.lanes.findIndex(([[tx, ty], [, by]]) => Math.abs(x - tx) < hit.s / 2 && y > ty && y < by);
       if (lane < 0) return;
       snapshot();
       const res = p.m.hammerLane(lane);
       if (res.r !== 'released') { p.history.pop(); return flash(res.r); }
       p.armed = null; p.boosters++; record('cheat'); drain(); return hud();
     }
-    const u = hit.ids.find(([, cx, cy]) => Math.abs(x - cx) < hit.s / 2 && Math.abs(y - cy) < hit.s / 2);
-    if (u) { p.auto = null; sound.play('tap', 0.4); tapUnit(u[0]); }
+    let best = null, bd = Infinity;
+    for (const u of hit.ids) {
+      const dx = (x - u[1]) / hit.rx, dy = (y - u[2]) / hit.ry, d = dx * dx + dy * dy;
+      if (d < 1 && d < bd) { bd = d; best = u; }
+    }
+    if (best) { p.auto = null; sound.play('tap', 0.4); tapUnit(best[0]); }
+  }
+
+  // ---------- ảnh bàn chơi của Editor: vẽ như game, bấm để sửa ----------
+  function paintEdit() {
+    const cv = root.querySelector('.pl-edit-canvas');
+    if (!cv || st.mode !== 'edit') return;
+    const conv = tryConvert(st.level).level;
+    if (!conv) return;
+    const m = new ParkingModel(conv);
+    const view = st.editView ??= new PlayView();
+    view.reset(m, [], false);
+    const dpr = window.devicePixelRatio || 1, rows = m.jh + 0.4;
+    const b = view.L.boardBounds(rows), bw = Math.max(b.x1, m.W + 1.4) - b.x0 + 0.6, bh = ((b.z1 - b.z0) * SIN + 0.3 * COS) / 0.92;
+    const maxH = Math.max(380, window.innerHeight - cv.getBoundingClientRect().top - 110);
+    const W = Math.floor(Math.min(560, Math.max(240, cv.parentElement.clientWidth - 4), maxH * bw / bh));
+    const H = Math.ceil(W / bw * bh);
+    const g = view.fit(m, W, H, { rows, wide: true, topPad: 0.04, botPad: 0.04 });
+    if (cv.width !== Math.round(g.W * dpr) || cv.height !== Math.round(g.H * dpr)) {
+      cv.width = Math.round(g.W * dpr); cv.height = Math.round(g.H * dpr);
+      cv.style.width = `${g.W}px`; cv.style.height = `${g.H}px`;
+    }
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    view.paint(c, m, { dpr, edit: { lane: st.lane, linkFrom: st.linkFrom, slots: st.editable } });
+    cv._edit = { view, m };
+  }
+
+  function editClick(ev, right = false) {
+    const cv = ev.currentTarget, e = cv._edit;
+    if (!e) return;
+    const r = cv.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top;
+    const { view, m } = e, v = view.v, L = view.L;
+    const wx = (sx - v.ox) / v.s, wz = (v.oy - sy) / (v.s * SIN) - 0.3 * COS / SIN;   // mặt trên xe (cao ~0.3)
+    const run = fn => { if (!right) return fn(); const tool = st.tool; st.tool = 'hidden'; try { fn(); } finally { st.tool = tool; } return undefined; };
+    const ci = Math.floor((wx - L.jamLeftX) / L.jc), row = Math.floor((L.jamTopZ - wz) / L.jc);
+    if (ci >= 0 && ci < m.jw && row >= 0 && wz < L.lotTopZ) return run(() => lotClick(ci, row));
+    const x = Math.round(wx);
+    if (x < 0 || x >= m.W || Math.abs(wx - x) > 0.5) return undefined;
+    if (wz > m.H - 0.5 && wz < m.H + 0.7) { if (!right) { st.lane = st.lane === x ? -1 : x; draw(); } return undefined; }
+    const slot = Math.round(wz - (m.H - m.hs[x]));
+    if (slot >= 0 && slot < m.hs[x]) return run(() => laneClick(x, slot));
+    return undefined;
   }
 
   // Chơi thử mặc định phủ cả cửa sổ, bàn chơi ở giữa màn hình; ✕ Thu nhỏ về lại tab Editor (nhớ theo trình duyệt).
@@ -599,7 +660,16 @@ function renderEditor(ctx) {
       cv?.addEventListener('click', canvasClick);
       paint();
       hud();
-    } else root.classList.remove('pl-focus');
+    } else {
+      root.classList.remove('pl-focus');
+      const ecv = root.querySelector('.pl-edit-canvas');
+      if (ecv) {
+        ecv.addEventListener('click', ev => editClick(ev));
+        ecv.addEventListener('contextmenu', ev => { ev.preventDefault(); if (st.editable) editClick(ev, true); });
+        paintEdit();
+        loadArt().then(() => { if (st.editView) st.editView.board = null; paintEdit(); });
+      }
+    }
   }
 
   root.addEventListener('click', ev => {
@@ -661,7 +731,7 @@ function renderEditor(ctx) {
     draw();
   });
 
-  const ro = new ResizeObserver(() => paint());
+  const ro = new ResizeObserver(() => { if (st.mode === 'play') paint(); else paintEdit(); });
   ro.observe(ctx.el);
   const onKey = ev => { if (ev.key === 'Escape' && root.classList.contains('pl-focus')) { ev.stopPropagation(); setFocus(false); } };
   document.addEventListener('keydown', onKey, true);
@@ -685,6 +755,56 @@ function renderEditor(ctx) {
 }
 
 let current = null;
+
+// ───────────────────────────── ảnh nhỏ (Thư viện, Thứ tự) ─────────────────────────────
+// rules.thumbnail trả SVG ngay; trên trình duyệt hook này đánh dấu SVG rồi vẽ lần lượt ảnh như màn Chơi thử (playview.mjs)
+// lúc rảnh và thay vào chỗ SVG. Ảnh nhớ theo nội dung level trong phiên.
+const thumbs = new Map(), thumbQueue = new Map();
+let thumbView = null, thumbBusy = false;
+const thumbKey = level => { const s = JSON.stringify(level); let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) | 0; return `t${(h >>> 0).toString(36)}${s.length}`; };
+const thumbImg = ({ url, w, h }) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"><image href="${url}" width="${w}" height="${h}"/></svg>`;
+
+function thumbWork() {
+  if (thumbBusy || !thumbQueue.size) return;
+  thumbBusy = true;
+  loadArt().then(() => {
+    const next = () => {
+      const [key, level] = thumbQueue.entries().next().value || [];
+      if (!key) { thumbBusy = false; return; }
+      thumbQueue.delete(key);
+      try {
+        const els = document.querySelectorAll(`[data-plthumb="${key}"]`);
+        if (els.length) {
+          const conv = tryConvert(level).level, m = new ParkingModel(conv);
+          thumbView ??= new PlayView();
+          thumbView.reset(m, [], false);
+          const rows = Math.min(m.jh, 4) + 0.3, b = thumbView.L.boardBounds(rows), bw = Math.max(b.x1, m.W + 1.4) - b.x0 + 0.6;
+          const W = 220, H = Math.ceil(W / bw * ((b.z1 - b.z0) * SIN + 0.3 * COS) / 0.94);
+          const cv = document.createElement('canvas'); cv.width = W * 2; cv.height = H * 2;
+          thumbView.fit(m, W, H, { rows, wide: true, topPad: 0.03, botPad: 0.03 });
+          const c = cv.getContext('2d'); c.setTransform(2, 0, 0, 2, 0, 0);
+          thumbView.paint(c, m, { dpr: 2 });
+          const url = cv.toDataURL('image/webp', 0.85);
+          const t = { url, w: W, h: H };
+          thumbs.set(key, t);
+          for (const el of document.querySelectorAll(`[data-plthumb="${key}"]`)) el.outerHTML = thumbImg(t);
+        }
+      } catch { /* level lỗi: giữ SVG */ }
+      setTimeout(next, 0);
+    };
+    next();
+  });
+}
+
+if (typeof window !== 'undefined') {
+  globalThis.parkingThumb = (level, svg) => {
+    const key = thumbKey(level);
+    if (thumbs.has(key)) return thumbImg(thumbs.get(key));
+    thumbQueue.set(key, level);
+    setTimeout(thumbWork, 50);
+    return svg.replace('<svg ', `<svg data-plthumb="${key}" `);
+  };
+}
 
 export default {
   renderEditor,

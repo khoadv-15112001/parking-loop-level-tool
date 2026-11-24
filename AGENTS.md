@@ -1,12 +1,33 @@
 # ParkingLevel
 
 Tool level của Parking Loop, fork của level-tool-core. Quy tắc chung (chỗ được sửa, cách chạy, test, changelog, giao diện):
-`levelcore/AGENTS.md`, đọc trước. File này chỉ ghi phần riêng của Parking Loop; cập nhật khi biết thêm.
+`levelcore/AGENTS.md`, đọc trước. File này ghi kiến thức ổn định riêng của Parking Loop; `game/WORKLOG.md` ghi đang làm tới
+đâu. Người dùng viết tiếng Việt: trả lời bằng tiếng Việt.
+
+## Giữ tài liệu cho phiên sau (bắt buộc, mọi task)
+
+Người dùng hay hết token và chuyển sang phiên Claude / tài khoản khác. Phiên mới chỉ biết những gì hai file này ghi, nên cuối
+**mọi** task có sửa file (trước `wrap_up` / lời kết):
+
+1. `game/WORKLOG.md`: thêm mục lên đầu "Nhật ký" (ngày, yêu cầu một dòng, đổi gì: file + số / quyết định chính, nguyên nhân
+   nếu là sửa lỗi, cái gì **chưa kiểm**). Cập nhật "Trạng thái hiện tại"; xoá mục đã xong.
+2. `AGENTS.md` (file này): chỉ khi kiến thức ổn định đổi (module mới, mốc commit Unity đã port, cách làm, bẫy mới).
+3. Ngắn gọn: điều phiên mới cần biết, không chép diff. Mục nhật ký cũ hơn ~20 mục thì gộp thành một dòng.
+
+## Repo
+
+- Remote `origin` = `git@github.com:khoadv-15112001/parking-loop-level-tool.git` (tạm; repo trong `SonatGameProduct` chờ
+  techlead tạo, khi có thì `git remote set-url origin …` rồi push). Remote `core` = level-tool-core (merge bản core mới).
+- Hỏi trước mỗi lần commit / push / tag (levelcore/AGENTS.md). Commit kết thúc bằng dòng Co-Authored-By theo hướng dẫn phiên.
+- Chạy dev tay (Git Bash, không cần ChayDev.bat):
+  `PARKINGLEVEL_DEV=1 PARKINGLEVEL_PORT=8894 PARKINGLEVEL_PUBLIC_BASE=http://localhost:8894 PARKINGLEVEL_DB="$PWD/data/dev.db" node levelcore/node/server.mjs`
+  rồi mở `http://localhost:8894/app/`. `data/` bị git bỏ qua (db dev, zip raw).
 
 ## Level của Parking Loop
 
-- Nguồn raw: repo Unity `parking-loop`, thư mục `Assets/_Game/Levels/Level_NNNN[_v].json` (867 file lúc làm tool,
-  biến thể A/B: không hậu tố = `a`, còn lại `b c e f g h i j l m n x y z`).
+- Nguồn raw: repo Unity `C:\Users\HIUU HIUU\Documents\my-unity-project\parking-loop` (GitHub `SonatGameProduct/parking-loop`,
+  nhánh `khoadv/parking-loop`), thư mục `Assets/_Game/Levels/Level_NNNN[_v].json` (867 file, biến thể A/B: không hậu tố =
+  `a`, còn lại `b c e f g h i j l m n x y z`).
 - Tool lưu nguyên raw đó. Tên level trong tool = NNNN (bỏ số 0 đầu), mỗi biến thể là một bộ: `a` → bộ `develop`,
   biến thể khác → bộ `ab-<v>` (vd `ab-x`). `li` trong raw = số level (`setLevelNumber`).
 - Đưa level vào / ra tool: `game/tools/unity_levels.mjs`
@@ -17,8 +38,8 @@ Tool level của Parking Loop, fork của level-tool-core. Quy tắc chung (ch�
 
 ## Luật (port từ bản Unity)
 
-Chép tay từ `Assets/_Game/Scripts/Core/` của repo Unity (đã theo tới commit `2eb94342` ngày 24/11/2026: vòng chạy ngược chiều
-kim đồng hồ, xe vào / ra vòng cần một trạm trống trước và sau):
+Chép tay từ `Assets/_Game/Scripts/Core/` của repo Unity (đã theo tới commit `221fe53d` ngày 24/11/2026; Core không đổi từ
+`2eb94342`: vòng chạy ngược chiều kim đồng hồ, cổng ở trạm dưới W/2, xe vào / ra vòng cần một trạm trống trước và sau):
 
 | Unity | Tool |
 | --- | --- |
@@ -27,22 +48,56 @@ kim đồng hồ, xe vào / ra vòng cần một trạm trống trước và sau
 | `ParkingLevelSolver.cs` (`SolveSettled`, `ReplaySettled`), `ParkingLevelChecker.cs` | `game/web/solver.mjs` |
 
 Unity đổi một trong các file trên thì chép lại thay đổi và chạy `node --test game/tests/*.test.mjs`: `model.test.mjs`
-giữ các level mẫu mà test Unity (`ParkingLevelDataTests.LoopLevel_IsSolvable`) khẳng định giải được. Chưa port:
-đọc level nén (gzip / brotli / binary), crossway hai hàng làn (game cũng chơi thành một hàng), xe ma `gc`, băng ở bãi `ic`.
+giữ các level mẫu mà test Unity (`ParkingLevelDataTests.LoopLevel_IsSolvable`) khẳng định giải được. Kiểm Unity đổi gì:
+`git -C <repo Unity> log --oneline <commit đã port>..HEAD -- Assets/_Game/Scripts/Core Assets/_Game/Scripts/View`.
+Chưa port: đọc level nén (gzip / brotli / binary), crossway hai hàng làn (game cũng chơi thành một hàng), xe ma `gc`, băng ở bãi `ic`.
 
-## Giao diện
+## Hình, chuyển động, VFX (port từ `Assets/_Game/Scripts/View/`, theo tới `221fe53d`)
 
-Vỏ của core + `game/web/ui.mjs`:
+Màn Chơi thử, ảnh bàn chơi ở Editor và ảnh nhỏ ở Thư viện dùng chung một renderer, vẽ như scene Gameplay của Unity:
 
-- `renderEditor` (`game/web/ui.mjs`): tab Editor có hai chế độ. **Bàn chơi**: tô / xoá xe làn và bãi, xe ẩn, chìa khoá, hộp khoá, máy phát,
-  nối xe, vật cản của làn (khoá màu, rào, làn màu, băng, rèm), thêm / xoá / dời làn và cột bãi. **Chơi thử**: chạy
-  `model.mjs` trên canvas (tick 128 ms như bản Unity), vẽ bằng art của game (`game/web/playview.mjs`: sprite, anim, VFX, âm
-  thanh), mặc định phủ cả cửa sổ với bàn chơi ở giữa; booster +1 chỗ / Xáo / Tay / Búa, hoàn tác; mỗi ván ghi lên
-  `/api/plays` (build `web-sim`). **Giải**: solver chạy trong Web Worker (`solver_worker.mjs`), có Xem lời giải.
-- Thang máy (`elv`) và vật rèm trên xe (`coc`) chỉ sửa ở tab JSON; editor hiện số tầng / chấm màu.
+| Unity | Tool |
+| --- | --- |
+| `ParkingLayout.cs` (toạ độ thế giới, đường vòng bo góc 0.9, `LoopAt`, `BodyOnLoop`, `BayPos`, `TransitRoute`) | `game/web/layout.mjs` |
+| `CarView.cs` (`Step`, `UpdateBody`, leg / merge / loop follower, drift, khói xả, bóng) | `game/web/carview.mjs` |
+| Model `Prefabs/Car.prefab` + vật liệu `Car_*.mat`, scene: camera trực giao nghiêng 72°, đèn Euler(55,-35) 1.15 + Euler(40,140) 0.45, ambient phẳng (0.55,0.58,0.62) | `game/web/carmesh.mjs` (WebGL, BRDF của URP Lit) |
+| `ParkingBoardView.cs` (Road_Vertical dọc tim đường, vạch, mũi tên, cỏ, vật cản làn), `ParkingGameController.cs` (`SyncViews`, transit, `DrainEvents`, `ClearRoutine`, `PopAndDestroy`, `ClearGlow`), `ParkingCameraRig.cs`, `ParkingHud.Popup / ShowCountdown`, `Editor/ParkingGeneratedFx.cs` (FX_Tap / Clear / Debris / Ice / Confetti), `ParkingPalette.cs` | `game/web/playview.mjs` |
+
+- Toạ độ: x sang phải, z lên trên màn hình, 1 đơn vị = 1 ô làn; chiếu `screen = (ox + x·s, oy − (z·sin72 + y·cos72)·s)`.
+  yaw radian, 0 = +z, dương = quay phải (như `transform.eulerAngles.y`); góc thân xe (pitch / roll / squash) bằng độ như Unity.
+- Thứ tự vẽ mỗi khung (`PlayView.paint`): bàn tĩnh (vẽ một lần vào canvas phụ) → viền đỏ khi vòng đầy, tấm thang máy, vệt
+  bánh, bóng xe, dây nối → canvas WebGL (khối thùng khoá / hộp khoá / gara / băng + xe 3D) → rèm, rào, số đếm, chìa khoá,
+  vật rèm → hạt VFX → biển `n/cap` → chữ popup / đếm ngược / màn kết thúc.
+- Đồng bộ với model như Unity: `PlayView.update(dt, m, phase, playing)` gọi `sync` (= SyncViews: đặt đích cho từng xe theo
+  model) rồi `CarAnim.step`. Xe từ bãi ra cổng là **transit theo thời gian** (tốc độ VLoop·1.15) do PlayView giữ; tới nơi
+  thì ui.mjs gọi `m.deliver(car)`. Tick model 128 ms (tick 0.16 / timeScale 1.25), ×1.4 khi bãi trống từ level 3
+  (endgame). Băng chuyền dừng khi booster đang chờ chọn mục tiêu.
+- Một context WebGL dùng chung cho mọi `PlayView` (`sharedGL`): trình duyệt giới hạn số context.
+- Ảnh nhỏ: `rules.thumbnail` trả SVG (chạy cả server); trên trình duyệt `globalThis.parkingThumb` (đăng ký trong ui.mjs)
+  đánh dấu SVG rồi vẽ dần ảnh như màn chơi lúc rảnh và thay vào.
+- Editor (`renderEditor`, chế độ Bàn chơi): canvas `paintEdit` vẽ toàn bộ bãi, `editClick` đổi điểm bấm ra ô làn / ô bãi rồi
+  gọi `laneClick(lane, slot)` / `lotClick(col, unit)` (lane = thứ tự `lanesOf`, slot 0 = đáy làn; col = thứ tự `lotOf`,
+  unit 0 = sát đường). Bấm đầu làn (sát đường trên) để chọn làn, chuột phải = bật / tắt xe ẩn. Level không dựng được thì
+  hiện lưới ô màu cũ.
+- Thang máy (`elv`) và vật rèm trên xe (`coc`) chỉ sửa ở tab JSON.
 - Tab Chơi thử của core (khung WebGL) dùng khi có bản WebGL của game kèm bridge `parkinglevel-game` / tag `PARKINGLEVEL`.
-- `game/web/game.css`: màu bàn theo `ParkingPalette.cs`.
-- Art của màn Chơi thử nằm ở `game/web/art/`, chép từ repo Unity bằng `node game/tools/unity_art.mjs <repo Unity>` (danh sách
-  file nguồn trong script: Sticker_Car_*, đường, cỏ, khoá, băng, rèm, booster, texture VFX của popup thắng, âm thanh, font
-  Mikado). Ảnh được thu nhỏ bằng System.Drawing của Windows PowerShell. Art trong game đổi thì chạy lại rồi commit.
-  Xe trong game là model 3D; tool dùng sticker 2D cùng màu nên dáng xe không giống hệt.
+- `game/web/game.css`: màu giao diện editor / thanh chơi.
+
+### Art (`game/web/art/`)
+
+Chép từ repo Unity bằng `node game/tools/unity_art.mjs "<repo Unity>"`: ảnh (danh sách `IMAGES` trong script, thu nhỏ bằng
+System.Drawing của Windows PowerShell), âm thanh, font Mikado, và `car_mesh.json` (mesh xe đọc từ `Car.prefab` → mesh
+`.asset` YAML, `game/tools/unity_mesh.mjs`). Art trong game đổi thì chạy lại rồi commit. Thêm ảnh mới: thêm vào `IMAGES`
+của script và `IMAGES` của playview.mjs.
+
+### Bẫy đã gặp
+
+- Project Unity để **Gamma color space** (`m_ActiveColorSpace: 0`): shader tính sáng thẳng trên màu sRGB, không chuyển tuyến
+  tính, không gamma-correct đầu ra. Đã đo ảnh chụp game: nóc xe sáng ≈ 1.7 lần màu gốc, nên xe ẩn (#9a9fb8) gần trắng là đúng.
+- Mesh Unity cuộn ngược chiều so với phép chiếu của tool: không lật pháp tuyến theo `gl_FrontFacing` (lật là xe tối hẳn).
+- Job (generator) của PlayView có thể tạo job con (`clearRoutine` → `popAndDestroy`): khi chạy job phải giữ job mới thêm.
+- Khung trình duyệt của Claude bị ẩn thì `requestAnimationFrame` bị hãm (đồng hồ ván gần như đứng): kiểm hình bằng cách
+  import `/app/game/playview.mjs`, `model.mjs`, `format.mjs` trong `javascript_tool`, dựng `PlayView` trên canvas riêng rồi
+  gọi `update(1/60, …)` từng bước và `paint` (level lấy qua `/api/packs/<bộ>/levels/<số>` với `authHeaders()` của
+  `/app/js/api.mjs`).
+- Heredoc của Git Bash hỏng với chuỗi có nhiều dấu nháy / backtick: ghi script ra scratchpad bằng Write rồi chạy node.
