@@ -38,8 +38,9 @@ Người dùng hay hết token và chuyển sang phiên Claude / tài khoản kh
 
 ## Luật (port từ bản Unity)
 
-Chép tay từ `Assets/_Game/Scripts/Core/` của repo Unity (đã theo tới commit `923942cc` ngày 24/11/2026; Core không đổi từ
-`2eb94342`: vòng chạy ngược chiều kim đồng hồ, cổng ở trạm dưới W/2, xe vào / ra vòng cần một trạm trống trước và sau):
+Chép tay từ `Assets/_Game/Scripts/Core/` của repo Unity (đã theo tới commit `d1adb3de` ngày 25/11/2026: vòng chạy ngược chiều
+kim đồng hồ, cổng ở trạm dưới W/2, xe vào / ra vòng cần một trạm trống trước và sau; xe vòng phanh nhường xe ra làn
+(`advanceLoop`, `held`, `dockWait`); crossway):
 
 | Unity | Tool |
 | --- | --- |
@@ -50,20 +51,34 @@ Chép tay từ `Assets/_Game/Scripts/Core/` của repo Unity (đã theo tới co
 Unity đổi một trong các file trên thì chép lại thay đổi và chạy `node --test game/tests/*.test.mjs`: `model.test.mjs`
 giữ các level mẫu mà test Unity (`ParkingLevelDataTests.LoopLevel_IsSolvable`) khẳng định giải được. Kiểm Unity đổi gì:
 `git -C <repo Unity> log --oneline <commit đã port>..HEAD -- Assets/_Game/Scripts/Core Assets/_Game/Scripts/View`.
-Chưa port: đọc level nén (gzip / brotli / binary), crossway hai hàng làn (game cũng chơi thành một hàng), xe ma `gc`, băng ở bãi `ic`.
+Chưa port: đọc level nén (gzip / brotli / binary), xe ma `gc`, băng ở bãi `ic` (game cũng chơi như xe thường).
 
-## Hình, chuyển động, VFX (port từ `Assets/_Game/Scripts/View/`, theo tới `923942cc`)
+### Crossway (`pf.ic`, level 200+, `docs/reference-crossway.md` của repo Unity)
+
+- Converter: `laneOrder` xếp làn theo hàng (khối dưới trước), `p.y`, `p.x`; làn luôn sâu 3; `level.crossRow/crossCol`.
+  Chỉ một hàng thì chơi như bàn thường.
+- Model: `laneCol / laneTopY / laneRow`, `BW` (số cột), `BH` (y đường trên), `ringBottomY` (-1 thường, đường giữa khi
+  crossway). Vòng = vòng GIỮA (đường trên nhận khối trên, đường giữa nhận khối dưới). Xe từ bãi và xe bị đẩy khỏi khối
+  dưới vào `exits` với `feeder = true`, `travel` tick (`feederTicks`) rồi nhập ở giao lộ `entry` (chân cạnh phải).
+- Mọi chỗ "làn x ở cột x" đã bỏ: hình dùng `L.lx(x)`, `L.lTop/lBottom(x)`, `colCenter`; model dùng `laneDist`, `exitStation`.
+- Hình: vòng ngoài vẽ quanh cả hai khối (`L.outerAt`), đảo + đường giữa (`drawMiddleRoad`), đường nhánh `L.feederAt`,
+  PlayView `syncFeeder` cho xe nhánh chạy theo chỗ của nó trên vòng.
+
+## Hình, chuyển động, VFX (port từ `Assets/_Game/Scripts/View/`, theo tới `d1adb3de`)
 
 Màn Chơi thử, ảnh bàn chơi ở Editor và ảnh nhỏ ở Thư viện dùng chung một renderer, vẽ như scene Gameplay của Unity:
 
 | Unity | Tool |
 | --- | --- |
-| `ParkingLayout.cs` (toạ độ thế giới, đường vòng bo góc 0.9, `LoopAt`, `BodyOnLoop`, `BayPos`, `TransitRoute`) | `game/web/layout.mjs` |
-| `CarView.cs` (`Step`, `UpdateBody`, leg / merge / loop follower, drift, khói xả, bóng) | `game/web/carview.mjs` |
+| `ParkingLayout.cs` (toạ độ thế giới, đường vòng bo góc 0.9, trạm đặt vào điểm gần nhất trên đường `mapStations`, `distOf / uOfDist`, `LoopAt`, `BodyOnLoop`, `BayPos`, `WaitRoute / ReleaseRoute`, `FeederAt`) | `game/web/layout.mjs` |
+| `CarView.cs` (`Step`, `UpdateBody`, leg / merge, chạy vòng liên tục `driveRing`, rời vòng vào làn `driveLoopExit`, nhường `capU / holdJoin / joinZone`, drift theo độ gắt cua, khói xả, bóng) | `game/web/carview.mjs` |
 | Model `Prefabs/Car.prefab` + vật liệu `Car_*.mat`, scene: camera trực giao nghiêng 72°, đèn Euler(55,-35) 1.15 + Euler(40,140) 0.45, ambient phẳng (0.55,0.58,0.62) | `game/web/carmesh.mjs` (WebGL, BRDF của URP Lit) |
 | `ParkingLoopSign.cs` + object `Sign-ConveyorCount` trong `Gameplay.unity` (bảng đếm vòng 3D thay LoopBadge: chân cột ở (W+0.62, 0, -1.7), trượt ngang cho lọt khung, chữ used/cap nảy khi đổi, đỏ + đập khi đầy, lắc khi FlashLoop, hạt HitToSign khi thêm chỗ) | `playview.mjs` (`signPos`, `drawSign`, `flashSign`), mesh `art/sign_mesh.json` |
 | `ParkingBoardView.cs` (Road_Vertical dọc tim đường, vạch, mũi tên, cỏ, vật cản làn), `ParkingGameController.cs` (`SyncViews`, transit, `DrainEvents`, `ClearRoutine`, `PopAndDestroy`, `ClearGlow`), `ParkingCameraRig.cs`, `ParkingHud.Popup / ShowCountdown`, `Editor/ParkingGeneratedFx.cs` (FX_Tap / Clear / Debris / Ice / Confetti), `ParkingPalette.cs` | `game/web/playview.mjs` |
 
+- Khoảng trống đầu làn – đường `laneEndGap` (0.45 bàn thường, 0.1 crossway): mũi tên vào làn, tấm rào, ô màu nằm ở đó.
+- Phía hình của controller (playview): xe xếp hàng nhập `lineUp`, xe chờ trong cột bãi khi ở cổng hết chỗ (`waitAt`,
+  `waitOrRelease`), giữ làn khi xe bị đẩy ra (`laneHold`), nhường đường `updateYield`.
 - Toạ độ: x sang phải, z lên trên màn hình, 1 đơn vị = 1 ô làn; chiếu `screen = (ox + x·s, oy − (z·sin72 + y·cos72)·s)`.
   yaw radian, 0 = +z, dương = quay phải (như `transform.eulerAngles.y`); góc thân xe (pitch / roll / squash) bằng độ như Unity.
 - Thứ tự vẽ mỗi khung (`PlayView.paint`): bàn tĩnh (vẽ một lần vào canvas phụ) → viền đỏ khi vòng đầy, tấm thang máy, vệt

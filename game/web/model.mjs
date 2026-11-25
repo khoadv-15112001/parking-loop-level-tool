@@ -4,8 +4,15 @@
 
 export const CLEAR_TICKS = 6;
 const EMPTY = -1;
+/** Xe chờ ở đầu làn tối đa bấy nhiêu tick rồi vào luôn. */
+const DOCK_WAIT_MAX = 8;
+/** Crossway: xe nhánh chờ ở giao lộ bấy nhiêu tick thì vòng nhường (game gốc: starvation escalation). */
+const JUNCTION_WAIT_MAX = 5;
 
-const car = (o) => ({ id: 0, c: '', len: 1, st: 0, hidden: false, key: false, coc: '', exitCol: -1, ...o });
+// held: xe vòng không chạy ở tick trước (nhường xe ra làn). dockWait / dockTicks: xe đứng ở đầu làn chờ xe nó đẩy ra vào được
+// đường ngay. feeder / travel / travelTotal / feedFrom: crossway, xe trên đường nhánh (đường dưới ngoài + cạnh phải dưới) còn
+// travel tick nữa mới tới giao lộ, xuất phát từ cột feedFrom của đường dưới.
+const car = (o) => ({ id: 0, c: '', len: 1, st: 0, hidden: false, key: false, coc: '', exitCol: -1, held: false, dockWait: false, dockTicks: 0, feeder: false, travel: 0, travelTotal: 0, feedFrom: 0, ...o });
 const cloneCar = k => ({ ...k });
 const sumLen = a => { let n = 0; for (const k of a) n += k.len; return n; };
 
@@ -18,6 +25,7 @@ export class ParkingModel {
     this.jw = lv.lot.length; this.jh = 1;
     for (const s of lv.lot) if (s.length > this.jh) this.jh = s.length;
     this.hs = Array.from({ length: W }, (_, x) => (lv.heights?.length === W ? lv.heights[x] : H));
+    this.setupGeometry(lv);
     this.nextId = 0;
     this.cols = []; this.peak = [];
     for (let x = 0; x < W; x++) {
@@ -92,9 +100,48 @@ export class ParkingModel {
     this.events = [];
   }
 
+  // ---------- hình học bàn (đơn vị ô). Bàn thường: làn x ở cột x, đầu làn dưới đường trên (y = H), đường dưới của vòng
+  // y = -1. Crossway (pf.ic, docs/reference-crossway.md của repo Unity): hai khối làn sâu 3; vòng là vòng GIỮA (đường trên,
+  // hai cạnh trên, đường giữa y = ringBottomY); đường dưới ngoài + cạnh phải dưới là đường nhánh một chiều vào vòng ở giao
+  // lộ (entry): xe từ bãi và xe bị đẩy khỏi khối dưới đi nhánh này (exits có feeder = true, travel tick) rồi mới nhập. ----------
+  setupGeometry(lv) {
+    const { W, H } = this;
+    this.laneCol = Array(W).fill(0); this.laneTopY = Array(W).fill(0); this.laneRow = Array(W).fill(1);
+    this.cross = lv.crossRow?.length === W && lv.crossCol?.length === W;
+    if (!this.cross) {
+      this.BW = W; this.BH = H; this.ringBottomY = -1;
+      for (let x = 0; x < W; x++) { this.laneCol[x] = x; this.laneTopY[x] = H - 1; }
+      return;
+    }
+    // Khối dưới y 0..H-1, đường giữa y = H, khối trên H+1..2H, đường trên 2H+1.
+    this.BW = 1;
+    for (let x = 0; x < W; x++) this.BW = Math.max(this.BW, lv.crossCol[x] + 1);
+    this.ringBottomY = H; this.BH = 2 * H + 1;
+    for (let x = 0; x < W; x++) {
+      this.laneRow[x] = lv.crossRow[x] > 0 ? 1 : 0;
+      this.laneCol[x] = lv.crossCol[x];
+      this.laneTopY[x] = this.laneRow[x] === 1 ? 2 * H : H - 1;
+    }
+  }
+
+  laneBottomY(x) { return this.laneTopY[x] - this.hs[x] + 1; }
+  /** Crossway, làn khối dưới: xe bị đẩy ra đi đường nhánh, không vào thẳng vòng. */
+  feedsOut(x) { return this.cross && this.laneRow[x] === 0; }
+  /** Khoảng cách trên bàn giữa hai làn (số cột, cộng một bề rộng bàn nếu khác hàng crossway). */
+  laneDist(a, b) { return Math.abs(this.laneCol[a] - this.laneCol[b]) + (this.laneRow[a] !== this.laneRow[b] ? this.BW : 0); }
+  laneAt(row, col) {
+    for (let x = 0; x < this.W; x++) if (this.laneRow[x] === row && this.laneCol[x] === col) return x;
+    return -1;
+  }
+  /** Crossway: số tick đi đường nhánh từ đường dưới ở cột fromCol tới giao lộ (≈ độ dài đường vẽ tính theo trạm). */
+  feederTicks(fromCol) { return Math.max(1, Math.ceil(this.BW - fromCol + (this.ringBottomY + 1) - 0.5)); }
+  /** Trạm mà xe bị đẩy khỏi làn x nhập vòng (bàn thường / khối trên crossway). */
+  exitStation(x) { return this.bottomIndex(this.laneCol[x]) - 1; }
+
   // ---------- trạm trên vòng, ngược chiều kim đồng hồ: trên (phải → trái), xuống bên trái, dưới (trái → phải) qua cổng,
   // lên bên phải ----------
   buildStations() {
+    if (this.cross) { this.buildCrossStations(); return; }
     const { W, H } = this, s = [];
     const st = (x, y, top = -1, bottom = -1) => ({ x, y, top, bottom });
     s.push(st(W, H));
@@ -110,6 +157,24 @@ export class ParkingModel {
     this.entry = this.bottomIndex(Math.floor(W / 2));   // trạm dưới đầu tiên ở / bên phải cổng
   }
 
+  /** Vòng giữa, ngược chiều kim đồng hồ: đường trên (nhận khối trên), xuống cạnh trái, đường giữa trái → phải (nhận khối
+   * dưới; xe bị đẩy khỏi khối trên ra đây), giao lộ (entry: đường nhánh nhập ở đây), lên cạnh phải. */
+  buildCrossStations() {
+    const { BW, BH, ringBottomY } = this, s = [];
+    const st = (x, y, top = -1, bottom = -1) => ({ x, y, top, bottom });
+    s.push(st(BW, BH));
+    for (let x = BW - 1; x >= 0; x--) s.push(st(x, BH, this.laneAt(1, x)));
+    s.push(st(-1, BH));
+    for (let y = BH - 1; y > ringBottomY; y--) s.push(st(-1, y));
+    s.push(st(-1, ringBottomY));
+    this.bottomStart = s.length;
+    for (let x = 0; x < BW; x++) s.push(st(x, ringBottomY, this.laneAt(0, x), x));
+    this.entry = s.length;
+    s.push(st(BW, ringBottomY));
+    for (let y = ringBottomY + 1; y < BH; y++) s.push(st(BW, y));
+    this.stations = s; this.N = s.length;
+  }
+
   bottomIndex(x) { return this.bottomStart + x; }
   topIndex(x) { return 1 + (this.W - 1 - x); }
 
@@ -118,6 +183,7 @@ export class ParkingModel {
     Object.assign(m, this);
     m.hs = this.hs; m.stations = this.stations; m.only = this.only; m.lockC = this.lockC; m.barrier = this.barrier;
     m.curC = this.curC; m.elvGroup = this.elvGroup;
+    m.laneCol = this.laneCol; m.laneTopY = this.laneTopY; m.laneRow = this.laneRow;
     m.cols = this.cols.map(c => c.map(cloneCar));
     m.buses = this.buses.map(b => ({ ...b }));
     m.occ = this.occ.map(c => c.slice());
@@ -264,7 +330,7 @@ export class ParkingModel {
 
   dropObject(c, fromCol) {
     let best = -1;
-    for (let x = 0; x < this.W; x++) if (this.curC[x] === c && this.curN[x] > 0 && (best < 0 || Math.abs(x - fromCol) < Math.abs(best - fromCol))) best = x;
+    for (let x = 0; x < this.W; x++) if (this.curC[x] === c && this.curN[x] > 0 && (best < 0 || this.laneDist(x, fromCol) < this.laneDist(best, fromCol))) best = x;
     if (best < 0) { this.events.push({ t: 'objLost', c, col: fromCol }); return; }
     this.curN[best]--;
     this.events.push({ t: 'curtain', col: best, c, left: this.curN[best] });
@@ -357,16 +423,26 @@ export class ParkingModel {
   }
 
   // Xe vào vòng cần một trạm trống phía trước và một phía sau: xe không chạy dính đuôi nhau.
-  canEnter(len) { return this.loopCells() + len <= this.cap && this.stationsFree((this.entry + 1) % this.N, len + 2); }
+  canEnter(len) { return this.loopCells() + len <= this.cap && (this.cross || this.stationsFree((this.entry + 1) % this.N, len + 2)); }
 
   tryEnter() {
     if (!this.queue.length) return false;
     const k = this.queue[0];
     if (!this.canEnter(k.len)) return false;
     this.queue.shift();
-    this.loop.push(car({ id: k.id, c: k.c, len: k.len, st: this.entry }));
+    if (this.cross) {
+      // Crossway: xe từ bãi đi đường dưới ngoài và cạnh phải dưới tới giao lộ trước.
+      const gate = (this.BW - 1) / 2, t = this.feederTicks(gate);
+      this.exits.push(car({ id: k.id, c: k.c, len: k.len, st: this.entry, feeder: true, travel: t, travelTotal: t, feedFrom: gate }));
+    } else this.loop.push(car({ id: k.id, c: k.c, len: k.len, st: this.entry }));
     this.events.push({ t: 'enter', id: k.id });
     return true;
+  }
+
+  /** Crossway: xe bị đẩy khỏi làn khối dưới đi đường nhánh (không vào vòng) tới giao lộ. */
+  feed(k, x) {
+    const t = this.feederTicks(this.laneCol[x]);
+    return car({ id: k.id, c: k.c, len: k.len, st: this.entry, feeder: true, travel: t, travelTotal: t, feedFrom: this.laneCol[x] });
   }
 
   uniformFull(x) {
@@ -453,28 +529,12 @@ export class ParkingModel {
     let changed = false;
     for (let i = 0; i < W; i++) if (this.clr[i] > 0) { this.clr[i]--; changed = true; }
     if (this.riseElevators()) changed = true;
-    for (const k of this.loop) k.st = (k.st + 1) % N;
+    this.advanceLoop();
     const stOcc = Array(N).fill(EMPTY), laneUsed = Array(W).fill(false), ejectedBuf = [];
     const mark = (head, len, id) => { for (let j = 0; j < len; j++) stOcc[(head - j + N) % N] = id; };
     const stationsEmpty = (head, len) => { for (let j = 0; j < len; j++) if (stOcc[(head - j + N) % N] !== EMPTY) return false; return true; };
     for (const k of this.loop) mark(k.st, k.len, k.id);
-    // MergeExits: xe chờ ở cửa làn vào vòng khi chỗ trống (mỗi cửa một xe mỗi tick).
-    if (this.exits.length) {
-      const blocked = new Set();
-      for (let e = 0; e < this.exits.length; e++) {
-        const c = this.exits[e];
-        if (blocked.has(c.exitCol)) continue;
-        if (!stationsEmpty((c.st + 1) % N, c.len + 2)) { blocked.add(c.exitCol); continue; }
-        this.exits.splice(e--, 1);
-        const col = c.exitCol;
-        c.exitCol = -1;
-        mark(c.st, c.len, c.id);
-        this.loop.push(c);
-        this.events.push({ t: 'merge', id: c.id, col });
-        blocked.add(col);
-        changed = true;
-      }
-    }
+    if (this.mergeExits(mark, stationsEmpty)) changed = true;
     for (let i = 0; i < this.loop.length; i++) {
       const k = this.loop[i];
       const st = this.stations[k.st];
@@ -483,16 +543,33 @@ export class ParkingModel {
       let free = this.hs[x] - sumLen(col), cut = 0, outCells = 0;
       while (free < k.len) { free += col[cut].len; outCells += col[cut].len; cut++; }
       if (this.loopCells() - k.len + outCells > this.cap) continue;
-      const bi = this.bottomIndex(x) - 1;
+      const bi = this.exitStation(x), feeds = this.feedsOut(x);
       let off = 0;
+      // Game gốc: xe bị đẩy ra đi ngay (xe trên đường phanh nhường). Khi nó chưa vào được đường ngay, xe sắp vào làn đứng chờ
+      // ở đầu làn (advanceLoop giữ nó và giữ trống đoạn đường dưới làn), nên làn không bao giờ giữ nhiều xe hơn số ô. Sau
+      // DOCK_WAIT_MAX tick thì vào luôn, xe bị đẩy chờ ở cửa làn như cũ.
+      if (cut > 0 && !feeds && k.dockTicks < DOCK_WAIT_MAX
+        && (this.exits.some(e => e.exitCol === x) || !stationsEmpty((bi + 1) % N, col[0].len + 2))) {
+        k.dockWait = true; k.dockTicks++;
+        laneUsed[x] = true;
+        continue;
+      }
+      k.dockWait = false; k.dockTicks = 0;
       laneUsed[x] = true;
       for (let j = 0; j < k.len; j++) { const s = (k.st - j + N) % N; if (stOcc[s] === k.id) stOcc[s] = EMPTY; }
       this.loop.splice(i--, 1);
       const ejected = [];
+      // Xe bị đẩy ra nhập lại vòng ở dưới làn; chỗ đó có xe (vòng chạy đồng bộ nên có thể kẹt mãi) thì chờ ở cửa làn và
+      // nhập vào khe trống kế tiếp.
       let wait = this.exits.some(e => e.exitCol === x);
       for (let q = 0; q < cut; q++) {
         const o = col[q];
         ejected.push(o.id);
+        if (feeds) {
+          this.exits.push(this.feed(o, x));
+          if (o.hidden) this.events.push({ t: 'revealCar', id: o.id, col: x, c: o.c });
+          continue;
+        }
         const nc = car({ id: o.id, c: o.c, len: o.len, st: (bi - off + N) % N });
         off += o.len;
         if (!wait && stationsEmpty((nc.st + 1) % N, nc.len + 2)) { mark(nc.st, nc.len, nc.id); ejectedBuf.push(nc); }
@@ -510,6 +587,80 @@ export class ParkingModel {
     if (this.tryEnter()) changed = true;
     this.idleTicks = changed ? 0 : this.idleTicks + 1;
     this.evaluate();
+  }
+
+  /**
+   * MergeExits: xe chờ ở cửa làn vào vòng khi chỗ trống (mỗi cửa một xe mỗi tick). Crossway: xe trên đường nhánh đếm ngược
+   * travel rồi mới nhập ở giao lộ; mọi xe nhánh dùng chung một giao lộ (theo thứ tự, mỗi tick một xe).
+   */
+  mergeExits(mark, stationsEmpty) {
+    if (!this.exits.length) return false;
+    const N = this.N, blocked = new Set(), FEEDER = 'f';
+    let any = false;
+    for (let e = 0; e < this.exits.length; e++) {
+      const c = this.exits[e], key = c.feeder ? FEEDER : c.exitCol;
+      // Xe nhánh còn đang chạy tới giao lộ không chặn các xe đã tới.
+      if (c.feeder && c.travel > 0) { c.travel--; any = true; if (c.travel > 0) continue; }
+      if (blocked.has(key)) continue;
+      if (!stationsEmpty((c.st + 1) % N, c.len + 2)) { blocked.add(key); if (c.feeder) c.dockTicks++; continue; }
+      this.exits.splice(e--, 1);
+      const col = c.exitCol, fed = c.feeder;
+      c.exitCol = -1; c.feeder = false; c.dockTicks = 0;
+      mark(c.st, c.len, c.id);
+      this.loop.push(c);
+      this.events.push({ t: 'merge', id: c.id, col, i: fed ? 1 : 0 });
+      blocked.add(key);
+      any = true;
+    }
+    return any;
+  }
+
+  /**
+   * Vòng chạy một trạm. Game gốc (giới hạn tốc độ ở điểm nhập): xe trên đường phanh nhường xe đang chờ ra khỏi làn. Xe ra
+   * đầu tiên giữ chỗ đoạn nó nhập vào (một trạm trống trước, thân xe, một trạm sau); xe sắp chạy vào đoạn đó đứng yên, và xe
+   * nào sẽ đâm vào xe đứng yên cũng đứng yên. Xe đã ở trong đoạn chạy tiếp cho thoát. Mỗi lúc chỉ một xe ra giữ chỗ nên
+   * đường không bao giờ khoá vòng tròn. Crossway: xe vòng đi trước ở giao lộ; xe nhánh chờ JUNCTION_WAIT_MAX tick thì được
+   * giữ chỗ giao lộ.
+   */
+  advanceLoop() {
+    const { N, loop } = this;
+    for (const c of loop) c.held = false;
+    // Xe chờ ở đầu làn chỉ còn chờ khi làn đó vẫn nhận nó.
+    for (const c of loop) {
+      if (!c.dockWait) continue;
+      const top = this.stations[c.st].top;
+      if (top < 0 || !this.accepts(top, c)) { c.dockWait = false; c.dockTicks = 0; }
+    }
+    const zones = [];
+    for (const e of this.exits) {
+      if (e.exitCol >= 0 || (e.feeder && e.travel === 0 && e.dockTicks >= JUNCTION_WAIT_MAX)) { zones.push([e.st, e.len]); break; }
+    }
+    for (const c of loop) {
+      if (!c.dockWait) continue;
+      const x = this.stations[c.st].top;
+      if (this.cols[x].length > 0) zones.push([this.exitStation(x), this.cols[x][0].len]);
+    }
+    const anyDock = loop.some(c => c.dockWait);
+    if ((zones.length === 0 && !anyDock) || loop.length === 0) {
+      for (const c of loop) c.st = (c.st + 1) % N;
+      return;
+    }
+    // Trạm giữ chỗ: head + 1 xuống head - len (như mergeExits / kiểm tra chờ đầu làn).
+    const reserved = s => zones.some(([head, len]) => (head + 1 - s + N) % N <= len + 1);
+    const at = Array(N).fill(-1);
+    loop.forEach((c, i) => { for (let j = 0; j < c.len; j++) at[(c.st - j + N) % N] = i; });
+    const stay = loop.map(c => c.dockWait || (reserved((c.st + 1) % N) && !reserved(c.st)));
+    for (let again = true; again;) {
+      again = false;
+      for (let i = 0; i < loop.length; i++) {
+        if (stay[i]) continue;
+        const ahead = at[(loop[i].st + 1) % N];
+        if (ahead >= 0 && ahead !== i && stay[ahead]) { stay[i] = true; again = true; }
+      }
+    }
+    const anyMoves = stay.some(s => !s);
+    // An toàn: đường kín cả vòng thì không thoát được đoạn giữ chỗ; khi đó mọi xe chạy như cũ.
+    loop.forEach((c, i) => { if (stay[i] && anyMoves) c.held = true; else c.st = (c.st + 1) % N; });
   }
 
   clearing() { return this.clr.some(v => v > 0); }
@@ -535,9 +686,9 @@ export class ParkingModel {
   key() {
     const p = [];
     p.push(this.cols.map(col => col.map(k => k.c + k.len + (k.key ? 'k' : '') + (k.coc ? 'o' : '')).join('')).join('/'));
-    p.push(this.loop.map(k => `${k.st}${k.c}${k.len}`).sort().join(','));
+    p.push(this.loop.map(k => `${k.st}${k.c}${k.len}${k.dockWait ? 'w' + k.dockTicks : ''}`).sort().join(','));
     p.push(this.queue.map(k => k.c + k.len).join(''));
-    if (this.exits.length) p.push('x' + this.exits.map(k => `${k.exitCol}:${k.c}${k.len}`).join(''));
+    if (this.exits.length) p.push('x' + this.exits.map(k => `${k.exitCol}:${k.c}${k.len}${k.feeder ? 'f' + k.travel + '.' + k.dockTicks : ''}`).join(''));
     p.push(this.buses.map(b => (b.out ? '-' : b.inGen >= 0 ? 'g' : `${b.x}.${b.y}${b.c}${b.frontOrder >= 0 ? 'f' + b.frontOrder : ''}`)).join(','));
     let s = this.locked.join('') + 'i' + this.ice.join('');
     for (let x = 0; x < this.W; x++) if (this.closed[x]) s += 'x' + x;
@@ -605,7 +756,7 @@ export class ParkingModel {
     if (!col.length) return { r: 'empty' };
     if (this.covered(x)) return { r: 'locked' };
     const first = col.shift();
-    this.exits.push(car({ id: first.id, c: first.c, len: first.len, st: this.bottomIndex(x) - 1, exitCol: x }));
+    this.exits.push(this.feedsOut(x) ? this.feed(first, x) : car({ id: first.id, c: first.c, len: first.len, st: this.exitStation(x), exitCol: x }));
     this.events.push({ t: 'hammer', id: first.id, col: x, c: first.c });
     this.checkLaneReveal(x);
     this.leaveLane(first, x);

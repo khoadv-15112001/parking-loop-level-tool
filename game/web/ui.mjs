@@ -619,11 +619,14 @@ function renderEditor(ctx) {
     const wx = (sx - v.ox) / v.s, wz = (v.oy - sy) / (v.s * SIN) - 0.3 * COS / SIN;   // mặt trên xe (cao ~0.3)
     const ci = Math.floor((wx - L.jamLeftX) / L.jc), row = Math.floor((L.jamTopZ - wz) / L.jc);
     if (ci >= 0 && (ci < m.jw || (drop && ci === m.jw)) && row >= 0 && wz < L.lotTopZ) return { kind: 'lot', ci, row };
-    const x = Math.round(wx);
-    if (x < 0 || x >= m.W || Math.abs(wx - x) > 0.5) return null;
-    if (wz > m.H - 0.5 && wz < m.H + 0.7) return drop ? { kind: 'lane', x, slot: m.hs[x] } : { kind: 'head', x };
-    const slot = Math.round(wz - (m.H - m.hs[x]));
-    if (slot >= 0 && slot < m.hs[x]) return { kind: 'lane', x, slot };
+    // làn dưới điểm bấm (crossway: hai khối làn)
+    for (let x = 0; x < m.W; x++) {
+      if (Math.abs(wx - L.lx(x)) > 0.5) continue;
+      const top = L.lTop(x);
+      if (wz > top + 0.5 && wz < top + 0.5 + (m.cross ? 0.2 : 1.2)) return drop ? { kind: 'lane', x, slot: m.hs[x] } : { kind: 'head', x };
+      const slot = Math.round(wz - L.lBottom(x));
+      if (slot >= 0 && slot < m.hs[x]) return { kind: 'lane', x, slot };
+    }
     return null;
   }
 

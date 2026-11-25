@@ -64,10 +64,21 @@ export function normalize(raw) {
 
 export const hasLink = u => u.cn.x >= 0 && u.cn.y >= 0;
 
-/** Thứ tự làn như game: theo p.y rồi p.x. Trả chỉ số trong pf.sd. */
-export function laneOrder(n) {
-  return n.pf.sd.map((s, i) => i).sort((a, b) => n.pf.sd[a].p.y - n.pf.sd[b].p.y || n.pf.sd[a].p.x - n.pf.sd[b].p.x);
+/** Crossway (pf.ic, ≥ 2 làn): hàng của làn sd[i] (0 = khối dưới, 1 = khối trên); bàn thường: luôn 0. */
+export function laneRowOf(n) {
+  const sd = n.pf.sd, cross = !!n.pf.ic && sd.length > 1, anyTop = sd.some(s => s.p.y > 0);
+  return i => (!cross ? 0 : anyTop ? (sd[i].p.y > 0 ? 1 : 0) : (i >= Math.floor((sd.length + 1) / 2) ? 1 : 0));
 }
+
+/** Thứ tự làn như game: theo hàng (crossway, khối dưới trước), p.y, p.x. Trả chỉ số trong pf.sd. */
+export function laneOrder(n) {
+  const sd = n.pf.sd, cross = !!n.pf.ic && sd.length > 1, anyTop = sd.some(s => s.p.y > 0), row = laneRowOf(n);
+  const yOf = i => (anyTop || !cross ? sd[i].p.y : 0);
+  return sd.map((s, i) => i).sort((a, b) => row(a) - row(b) || yOf(a) - yOf(b) || sd[a].p.x - sd[b].p.x || a - b);
+}
+
+/** Độ sâu làn của bàn crossway (CrosswayCapacity của game gốc). */
+export const CROSSWAY_DEPTH = 3;
 
 /** Cột bãi như game: nhóm ui.u theo p.x (tăng dần), trong cột xếp p.y giảm dần (y lớn = sát đường). Trả [{x, units: [chỉ số ui.u]}]. */
 export function lotOrder(n) {
@@ -89,10 +100,12 @@ export function convert(raw) {
   if (!order.length) return { level: null, notes, error: 'không có làn nào (pf.sd rỗng)' };
   const lanes = order.map(i => d.pf.sd[i]);
   const laneCars = lanes.map(s => s.se.filter(c => c.c !== 0));
-  const W = lanes.length, H = Math.max(1, d.pf.cp);
+  const cross = !!d.pf.ic && d.pf.sd.length > 1, rowOf = laneRowOf(d);
+  // Crossway: làn luôn sâu 3 (CrosswayCapacity / GetEffectiveCapacity của game gốc).
+  const W = lanes.length, H = cross ? CROSSWAY_DEPTH : Math.max(1, d.pf.cp);
   let dropped = 0;
   for (const l of laneCars) if (l.length > H) { dropped += l.length - H; l.length = H; }
-  if (dropped > 0) notes.push(`${dropped} xe trong làn vượt quá chiều cao làn cp=${d.pf.cp} bị bỏ`);
+  if (dropped > 0) notes.push(`${dropped} xe trong làn vượt quá chiều cao làn ${H} bị bỏ`);
 
   const rows = Array.from({ length: H }, () => Array(W).fill('.'));
   for (let x = 0; x < W; x++) {
@@ -144,6 +157,13 @@ export function convert(raw) {
     grid: rows.map(r => r.join('')), loop: d.pf.tl > 0 ? d.pf.tl : DEFAULT_LOOP, queue: 0, lot, lotUnits,
     locks: [], only: [], barriers: [], iceLanes: [], curtains: [], elevators: [], laneCars: [], heights: [],
   };
+  if (cross) {
+    // Cột trong hàng = thứ hạng của làn trong hàng của nó (game gốc đếm sd theo hàng; thực tế = p.x).
+    lv.crossRow = []; lv.crossCol = [];
+    const perRow = [0, 0];
+    for (let x = 0; x < W; x++) { const r = rowOf(order[x]); lv.crossRow.push(r); lv.crossCol.push(perRow[r]++); }
+    if (!perRow[0] || !perRow[1]) { delete lv.crossRow; delete lv.crossCol; notes.push('crossway chỉ có một hàng làn: chơi như bàn thường'); }
+  }
   for (let x = 0; x < W; x++) {
     const s = lanes[x];
     const lockColor = s.t === 1 || s.lc !== 0 ? colorOf(s.lc) : '';
@@ -164,7 +184,7 @@ export function convert(raw) {
       lv.elevators.push({ col: x, group: s.elid, levels });
     }
   }
-  if (d.pf.ic || new Set(lanes.map(s => s.p.y)).size > 1) notes.push('crossway: hai hàng làn được xếp thành một hàng');
+  if (!cross && new Set(lanes.map(s => s.p.y)).size > 1) notes.push('làn ở nhiều hàng (không có pf.ic) được xếp thành một hàng');
   if (d.ui.u.some(u => u.gc > 0)) notes.push('xe ma (gc) được chơi như xe thường');
   if (d.ui.u.some(u => u.ic > 0)) notes.push('xe đóng băng trong bãi (ic) được chơi không có băng');
   return { level: lv, notes, error: null };

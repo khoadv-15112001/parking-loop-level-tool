@@ -163,7 +163,10 @@ const THUMB_COLORS = {
 };
 
 function thumbSvg(lv) {
-  const W = lv.grid[0].length, H = lv.grid.length, cols = lv.lot.length;
+  const NL = lv.grid[0].length, LH = lv.grid.length, cols = lv.lot.length;
+  // crossway: hai khối làn (khối dưới y 0..LH-1, đường giữa y = LH, khối trên từ LH+1), W = số cột, H = y đường trên
+  const cross = !!lv.crossRow, W = cross ? Math.max(...lv.crossCol) + 1 : NL, H = cross ? 2 * LH + 1 : LH;
+  const lx = x => (cross ? lv.crossCol[x] : x), base = x => (cross && lv.crossRow[x] ? LH + 1 : 0);
   const depth = Math.min(5, Math.max(1, ...lv.lot.map(s => s.length)));
   const c = 12, jc = 1.05;
   const lotL = (W - 1) / 2 - cols * jc / 2, lotTop = -3.74;
@@ -191,19 +194,20 @@ function thumbSvg(lv) {
   s += `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" rx="${r}" fill="none" stroke="#5d62a6" stroke-width="${n(0.75)}"/>`;
   s += `<rect x="${X((W - 1) / 2 - 0.55)}" y="${Z(-1 - 0.2)}" width="${n(1.1)}" height="${n(0.42)}" fill="#5d62a6"/>`;
   s += `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" rx="${r}" fill="none" stroke="#d6d9f2" stroke-width="${n(0.06)}" stroke-dasharray="${n(0.24)} ${n(0.36)}"/>`;
-  for (let x = 1; x < W; x++) s += `<rect x="${X(x - 0.52)}" y="${Z(H - 0.25)}" width="${n(0.035)}" height="${n(H - 0.5)}" fill="#b9bde3"/>`;
+  if (cross) s += `<rect x="${X(-1)}" y="${Z(LH + 0.375)}" width="${n(W + 1)}" height="${n(0.75)}" fill="#5d62a6"/>`;
+  for (let x = 0; x < NL; x++) if (lx(x) > 0) s += `<rect x="${X(lx(x) - 0.52)}" y="${Z(base(x) + LH - 0.25)}" width="${n(0.035)}" height="${n(LH - 0.5)}" fill="#b9bde3"/>`;
   // xe trong làn (mũi xuống), vật cản phủ làn
   const cover = x => lv.locks.find(k => k.col === x) || lv.iceLanes.find(k => k.col === x) || lv.curtains.find(k => k.col === x);
   lv.grid.forEach((row, gy) => [...row].forEach((ch, x) => {
-    if (ch !== '.') s += car(x, H - 1 - gy, ch !== ch.toUpperCase() || cover(x) ? '#cfd2e6' : col(ch), false);
+    if (ch !== '.') s += car(lx(x), base(x) + LH - 1 - gy, ch !== ch.toUpperCase() || cover(x) ? '#cfd2e6' : col(ch), false);
   }));
-  for (let x = 0; x < W; x++) {
+  for (let x = 0; x < NL; x++) {
     const k = cover(x);
     if (!k) continue;
     const ice = lv.iceLanes.includes(k), cur = lv.curtains.includes(k);
-    s += `<rect x="${X(x - 0.45)}" y="${Z(H - 0.45)}" width="${n(0.9)}" height="${n(H - 0.1)}" rx="3" fill="${ice ? '#dff3ff' : cur ? '#f3e7d2' : k.color ? col(k.color) : '#2d3046'}" opacity="${ice ? 0.7 : 0.85}"/>`;
+    s += `<rect x="${X(lx(x) - 0.45)}" y="${Z(base(x) + LH - 0.45)}" width="${n(0.9)}" height="${n(LH - 0.1)}" rx="3" fill="${ice ? '#dff3ff' : cur ? '#f3e7d2' : k.color ? col(k.color) : '#2d3046'}" opacity="${ice ? 0.7 : 0.85}"/>`;
   }
-  for (const k of lv.only || []) for (const d of [-0.4, 0.4]) s += `<rect x="${X(k.col + d - 0.03)}" y="${Z(H - 0.4)}" width="${n(0.06)}" height="${n(H - 0.2)}" fill="${col(k.c)}"/>`;
+  for (const k of lv.only || []) s += `<rect x="${X(lx(k.col) - 0.18)}" y="${Z(base(k.col) + LH - 0.38)}" width="${n(0.36)}" height="${n(0.26)}" rx="2" fill="${col(k.c)}"/>`;
   // bãi (mũi lên)
   const special = new Map(lv.lotUnits.map(u => [`${u.col},${u.i}`, u]));
   lv.lot.forEach((line, x) => [...line].slice(0, depth).forEach((ch, i) => {

@@ -17,12 +17,31 @@ test('layout: đường vòng khép kín, xe cách đều perimeter / N, tâm tr
   const a = L.pathAt(0), b = L.pathAt(L.perimeter);
   assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 1e-6);
   assert.ok(Math.abs(L.spacing * m.N - L.perimeter) < 1e-9);
-  const top = L.loopAt(L.sMid);
-  assert.ok(Math.abs(top.x - (m.W - 1) / 2) < 1e-6 && Math.abs(top.z - m.H) < 1e-6);
-  assert.ok(Math.abs(Math.abs(top.yaw) - Math.PI / 2) < 1e-6);   // hàng trên chạy ngang
+  // trạm trên / dưới nằm ngay trên làn của nó
+  for (let x = 0; x < m.W; x++) {
+    const t = L.loopAt(m.topIndex(x)), b = L.loopAt(m.bottomIndex(x));
+    assert.ok(Math.abs(t.x - x) < 0.02 && Math.abs(t.z - L.topZ) < 1e-6 && Math.abs(Math.abs(t.yaw) - Math.PI / 2) < 1e-6);
+    assert.ok(Math.abs(b.x - x) < 0.02 && Math.abs(b.z - L.roadBottomZ) < 1e-6);
+  }
+  for (const u of [0.3, 5.5, m.N - 0.2]) assert.ok(Math.abs(L.uOfDist(L.distOf(u)) - u) < 1e-3);
   // bãi nằm dưới vòng, hàng đầu cao nhất
   const front = L.jp(0, m.jh - 1), back = L.jp(0, 0);
   assert.ok(front.z < -1 && back.z < front.z);
+});
+
+test('layout crossway: hai khối làn, vòng giữa qua đường giữa, đường nhánh tới vạch dừng dưới giao lộ', () => {
+  const m = model(200), L = new Layout(m);
+  assert.ok(L.cross && m.BW === 2);
+  for (let x = 0; x < m.W; x++) {
+    const st = m.stations.findIndex(s => s.top === x), p = L.loopAt(st);
+    assert.ok(Math.abs(p.x - L.lx(x)) < 0.02);
+    assert.ok(Math.abs(p.z - (m.laneRow[x] ? L.topZ : L.middleZ)) < 1e-6);
+    assert.ok(L.lTop(x) < p.z);   // đầu làn ngay dưới đường nhận xe
+  }
+  assert.ok(L.middleZ < L.lBottom(2) && L.middleZ > L.lTop(0));   // đường giữa nằm giữa hai khối
+  const len = L.feederLength(L.gateX, 1), end = L.feederAt(L.gateX, 1, len + 5);
+  assert.ok(Math.abs(end.x - m.BW) < 1e-6 && Math.abs(end.z - L.feederEndZ(1)) < 1e-6 && Math.abs(end.yaw) < 1e-6);
+  assert.ok(end.z < L.middleZ);
 });
 
 test('layout: đường từ bãi ra cổng đi lên rồi tới chỗ chờ dưới cổng', () => {

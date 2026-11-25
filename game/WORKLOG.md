@@ -6,7 +6,7 @@ Nhật ký để phiên Claude mới biết tool đang ở đâu. Đọc cùng `
 ## Trạng thái hiện tại
 
 - Nhánh `main`, push lên `origin` = `khoadv-15112001/parking-loop-level-tool`. Repo trong `SonatGameProduct` chờ techlead tạo.
-- Unity đã port tới `923942cc` (24/11/2026) cả Core (luật) lẫn View (hình, chuyển động, VFX).
+- Unity đã port tới `d1adb3de` (25/11/2026) cả Core (luật, có crossway) lẫn View (hình, chuyển động, VFX).
 - Changelog `game/web/releases.json`: bản 0.1.0 chưa tag (date trống).
 - **Chờ người dùng so với game thật** (chưa ai xem cạnh nhau trên máy):
   - Cảm giác chơi: tốc độ xe ra cổng, cua nhập vòng, trượt đuôi, nổ khi xoá làn, rung / zoom camera, popup combo.
@@ -16,9 +16,25 @@ Nhật ký để phiên Claude mới biết tool đang ở đâu. Đọc cùng `
   - Bảng đếm vòng 3D: cỡ, chỗ đặt, chỗ bắn hạt HitToSign (theo số trong scene; hạt nằm trước mặt bảng). Hạt chỉ là quầng +
     chấm sáng, chưa phải prefab StarBurst / Spikes.
   - Editor kéo-thả: mới thử bằng chuột giả lập trên level 7 (đổi chỗ làn ↔ làn, bãi → làn), chưa có người dùng thật thử.
+  - Crossway (level 200+): bàn, đường nhánh, xe nhập giao lộ; hình vật cản mới (rào tấm chắn, ô màu, gara tím, thang
+    máy, xe ẩn "?"); xe chờ trong cột bãi khi cổng hết chỗ. Editor crossway: chưa thử sửa / kéo trên level crossway.
 - Chưa làm: âm nhạc nền; haptic (web không có); chụp ảnh level vào server ("Chụp ảnh" của core cần bridge WebGL của game).
 
 ## Nhật ký
+
+### 25/11/2026 — Gameplay Unity mới (crossway, feeling, obstacle) vào Chơi thử
+- Yêu cầu: lấy phần gameplay Parking Loop đã commit (`923942cc..d1adb3de`) vào chơi thử. Phiên trước (tài khoản khác) làm
+  crossway trong repo Unity; phần đó đã commit ở `d1adb3de`, repo Unity không còn thay đổi chưa commit.
+- Luật: `format.mjs` (`laneRowOf`, `laneOrder` theo hàng, làn sâu 3, `crossRow/crossCol`); `model.mjs` (hình học làn,
+  vòng giữa, đường nhánh `feeder`, `advanceLoop` nhường xe ra làn, `dockWait`, `mergeExits`). Checker bộ chính 1–336 khớp
+  Unity: 329 Solvable, 209 Unknown, 215 / 274 / 288 / 311 / 317 Unsolvable.
+- Hình: `layout.mjs` viết lại theo ParkingLayout mới; `carview.mjs` (chạy vòng liên tục, rời vòng vào làn, nhường);
+  `playview.mjs` (sync mới, đường nhánh, chờ cột bãi, giữ làn, bàn crossway, vật cản mới, bỏ rung camera khi xoá làn,
+  dây nối hai màu, mảnh băng, cột sáng thang máy); `rules.mjs` ảnh SVG biết crossway; `ui.mjs` `editHit` theo vị trí làn.
+- Art mới (`unity_art.mjs`): platform_under, barrier_plate / block, cone, question, ice_piece_1..5.
+- Test: 35 xanh (thêm crossway ở model.test, layout crossway ở view.test, raw 200).
+- Đã kiểm trên trình duyệt: level 200 tự bấm tới thắng (không lỗi), ảnh 50 (rào đóng), 250, 15, 10; Editor + Chơi thử
+  thật level 200. Chưa so cạnh game thật; chưa thử sửa level crossway trong Editor.
 
 ### 24/11/2026 (khuya) — Bàn chơi lệch trái; hướng dẫn xếp level mới
 - Yêu cầu: màn hình game lệch trái; người dùng không biết cách xếp một level mới.

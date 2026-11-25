@@ -40,6 +40,13 @@ const IMAGES = [
   [`${S}Hand.png`, 'boost_hand.png', 128],
   [`${S}Booster_Hammer.png`, 'boost_hammer.png', 128],
   ['Assets/_Game/Art/Popups/UI/Lose/mascot_fail.png', 'mascot_fail.png', 320],
+  // crossway / vật cản theo video game gốc (Unity d1adb3de)
+  [`${S}Platform_Under 1.png`, 'platform_under.png', 160],
+  [`${S}Road_Blocker_02.png`, 'barrier_plate.png', 160],
+  [`${S}Road_Blocker_07.png`, 'barrier_block.png', 128],
+  [`${S}Traffic_Cone_Shadow.png`, 'cone.png', 96],
+  [`${S}questionmark.png`, 'question.png', 96],
+  ...[1, 2, 3, 4, 5].map(i => [`${S}ice_piece_0${i}.png`, `ice_piece_${i}.png`, 64]),
 ];
 const COPY = [
   ['Assets/_Game/Generated/Audio/sfx_tap.wav', 'sfx_tap.wav'],

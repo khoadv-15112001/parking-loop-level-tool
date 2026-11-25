@@ -81,3 +81,57 @@ test('hook phụ: summary, changes, số level, ảnh nhỏ', () => {
   assert.equal(validateLevel(blank, { levelNo: 3 }).isValid, true);
   assert.equal(checkLevel(blank).verdict, 'Solvable');
 });
+
+// ---- Crossway (pf.ic): hai khối làn, vòng giữa, đường nhánh (ParkingCrosswayTests.cs của Unity) ----
+// Làn 0, 1 = khối dưới, 2, 3 = khối trên. Làn 0 (khối dưới, cột 0) đầy, trên cùng là G.
+const cross = (loop, ...lot) => ({ grid: ['G...', 'Y...', 'RBBB'], loop, queue: 0, lot, lotUnits: [], locks: [], only: [], barriers: [], iceLanes: [], curtains: [], elevators: [], laneCars: [], heights: [], crossRow: [0, 0, 1, 1], crossCol: [0, 1, 0, 1] });
+const tapDeliver = (m, id) => { const r = m.tap(id); assert.equal(r.r, 'released'); m.deliverAll(r); return r.car; };
+const runUntil = (m, pred, n) => { const all = []; for (let i = 0; i < n; i++) { m.events = []; m.tick(); all.push(...m.events); if (pred(m.events)) break; } return all; };
+
+test('crossway: converter chia làn thành hai khối, sâu 3', () => {
+  const lv = convert(raw(200)).level;
+  assert.equal(lv.grid.length, 3);
+  assert.deepEqual(lv.crossRow, [0, 0, 1, 1]);
+  assert.deepEqual(lv.crossCol, [0, 1, 0, 1]);
+  const m = new ParkingModel(lv);
+  assert.ok(m.cross);
+  assert.equal(m.BW, 2);
+});
+
+test('crossway: khối trên nhận xe ở đường trên, khối dưới ở đường giữa; giao lộ ở cạnh phải', () => {
+  const m = new ParkingModel(cross(5, 'G'));
+  assert.equal(m.ringBottomY, m.H);
+  const tops = new Map(m.stations.filter(s => s.top >= 0).map(s => [s.top, s]));
+  assert.equal(tops.get(2).y, m.BH);
+  assert.equal(tops.get(0).y, m.ringBottomY);
+  assert.equal(m.stations[m.entry].x, m.BW);
+  assert.equal(m.stations[m.entry].y, m.ringBottomY);
+});
+
+test('crossway: xe từ bãi đi đường nhánh rồi nhập ở giao lộ', () => {
+  const m = new ParkingModel(cross(5, 'G'));
+  const k = tapDeliver(m, 0);
+  assert.equal(m.loop.length, 0);
+  assert.equal(m.exits.length, 1);
+  assert.ok(m.exits[0].feeder && m.exits[0].travel > 1);
+  const ev = runUntil(m, e => e.some(o => o.t === 'merge' && o.id === k.id), 40);
+  assert.ok(ev.some(o => o.t === 'merge' && o.id === k.id));
+});
+
+test('crossway: làn khối dưới đẩy xe ra đường nhánh, xe đó lên lại qua giao lộ', () => {
+  const m = new ParkingModel(cross(5, 'G'));
+  const bottom = m.cols[0][0].id;
+  tapDeliver(m, 0);
+  const ev = runUntil(m, e => e.some(o => o.t === 'insert' && o.col === 0), 80);
+  assert.ok(ev.some(o => o.t === 'insert' && o.col === 0));
+  const pushed = m.exits.find(c => c.id === bottom);
+  assert.ok(pushed && pushed.feeder && pushed.exitCol === -1);
+  runUntil(m, e => e.some(o => o.t === 'merge' && o.id === bottom), 40);
+  assert.ok(m.loop.some(c => c.id === bottom));
+});
+
+test('Level 200 (crossway) giải được và lời giải chạy lại thắng', () => {
+  const r = checkLevel(raw(200));
+  assert.equal(r.verdict, 'Solvable', r.detail);
+  assert.equal(replaySettled(convert(raw(200)).level, r.taps).state, 'won');
+});

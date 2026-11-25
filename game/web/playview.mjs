@@ -5,7 +5,7 @@
 //  - Luồng hình / VFX / âm thanh: port ParkingGameController.cs (SyncViews, transit, DrainEvents, ClearRoutine,
 //    PopAndDestroy, ClearGlow) và các prefab FX_* (ParkingGeneratedFx.cs).
 // Art, âm thanh, font, mesh xe: game/web/art/ (node game/tools/unity_art.mjs <repo Unity>).
-import { Layout, polyAt, polyLength } from './layout.mjs';
+import { Layout, LOOP_RADIUS, polyAt, polyLength } from './layout.mjs';
 import { CarAnim, ease } from './carview.mjs';
 import { CarRenderer, loadCarMesh, loadMesh, meshInfo, SIN, COS } from './carmesh.mjs';
 
@@ -20,18 +20,22 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // Màu thân xe (ParkingPalette.cs); '?' = xe ẩn.
 export const PALETTE = {
   R: '#e4100c', Y: '#f9b80a', T: '#00c4cf', L: '#3aa6ff', G: '#0ac80a', N: '#7a4419', V: '#a27ee8', P: '#ff5fb2',
-  O: '#ff7608', K: '#454952', U: '#7a22d0', M: '#d8128a', W: '#f4f5fb', C: '#f3e3b5', B: '#2f6cf0', '?': '#9a9fb8',
+  O: '#ff7608', K: '#454952', U: '#7a22d0', M: '#d8128a', W: '#f4f5fb', C: '#f3e3b5', B: '#2f6cf0', '?': '#8478e6',
 };
 const pal = ch => PALETTE[String(ch || '?').toUpperCase()] || PALETTE['?'];
 const COL = {
   ground: '#7d84c7', lane: '#d6d9f2', curbShade: '#b9bde3', lotLine: '#b6b8ce', ink: '#2d3046', grassFar: '#a1cc26',
+  // crossway (đo trên ảnh level 200 của game gốc): đảo tối hơn đường, nét đứt / mũi tên mờ
+  crossIsland: '#575978', crossDash: '#8a8eb2', crossArrow: '#8e92b2', crossRoad: '#6c709b', curb: '#f4f5fb',
+  garageSide: '#6b54d1', garageLid: '#a8b8f5', elvFloor: '#bacce0', elvBump: '#dbe8f7', elvYellow: '#ffcc1a', elvBlack: '#292b38',
   warnCurb: [242, 51, 61], keyColor: '#ffcc33',
 };
 
 // ───────────────────────────── art ─────────────────────────────
 
 const IMAGES = ['road', 'ground', 'grass_left', 'grass_right', 'fx_circle', 'fx_glow2', 'lock', 'lockkey', 'curtain_top', 'curtain_mid',
-  'curtain_under', 'splash', 'platform', 'badge', 'loop_sign', 'loop_sign_full', 'tap_hand', 'mascot_fail', 'ice_tex', 'rope'];
+  'curtain_under', 'splash', 'platform', 'platform_under', 'badge', 'loop_sign', 'loop_sign_full', 'tap_hand', 'mascot_fail', 'ice_tex', 'rope',
+  'barrier_plate', 'barrier_block', 'cone', 'question', 'ice_piece_1', 'ice_piece_2', 'ice_piece_3', 'ice_piece_4', 'ice_piece_5'];
 const img = {};
 let loading = null;
 const ok = i => !!i && (i instanceof HTMLCanvasElement || (i.complete && i.naturalWidth > 0));
@@ -152,6 +156,9 @@ class Particles {
         c.globalCompositeOperation = q.kind === 'glow' ? 'lighter' : 'source-over';
         if (src) c.drawImage(src, x - px / 2, y - px / 2, px, px);
         c.globalCompositeOperation = 'source-over';
+      } else if (q.kind === 'sprite') {
+        const i = img[q.sprite];
+        if (ok(i)) { c.save(); c.translate(x, y); c.rotate(q.rot); c.drawImage(i, -px / 2, -px / 2 * ih(i) / iw(i), px, px * ih(i) / iw(i)); c.restore(); }
       } else if (q.shape === 'flat') {
         c.save(); c.translate(x, y); c.rotate(q.rot); c.fillStyle = q.color;
         const h = q.size2 ? q.size2 * s * (size / q.size) : px;
@@ -173,6 +180,12 @@ function coneDir(angleDeg) {
 
 let sharedGL = null;
 const VISIBLE_LOT_ROWS = 2.8, LAG_STATIONS = 0.5, TICK = 0.16, TIME_SCALE = 1.25;
+// Đường: cắt mép trong của Road_Vertical ở u 0.785 (tránh vệt bóng của lề); crossway: bước nét đứt, lề đảo cách tim đường giữa.
+const INNER_CUT_U = 0.785, CROSS_DASH_STEP = 0.95, MID_CURB_D = 0.36, LOOP_R = LOOP_RADIUS;
+const FEED_GAP = 0.15;          // khoảng giữa hai xe trên đường nhánh
+const MIN_CAR_GAP = 0.1;        // khoảng cản trước tới cản sau của xe phía trước trên đường
+const LANE_HOLD_MAX = 0.35, LANE_HOLD_SAFETY = 3, LANE_RELEASE_DIST = 2.2;
+const wrapAngle = a => { a %= 2 * Math.PI; if (a > Math.PI) a -= 2 * Math.PI; else if (a < -Math.PI) a += 2 * Math.PI; return a; };
 
 export class PlayView {
   constructor() {
@@ -195,13 +208,26 @@ export class PlayView {
   reset(m, transits = [], intro = true) {
     this.m = m; this.L = new Layout(m);
     this.views.clear(); this.dying.clear(); this.jobs = []; this.bumps.clear(); this.skids.clear();
-    this.lane = Array.from({ length: m.W }, (_, x) => ({ lock: m.locked[x] > 0, ice: m.ice[x] > 0, cur: m.curN[x] > 0, openLock: -1, openIce: -1, openCur: -1, pulseIce: -1, pulseCur: -1, barrierT: m.closed[x] ? 1 : -1, wait: m.elvWait[x] }));
+    // trạng thái phía hình của ParkingGameController (xếp hàng nhập, chờ trong cột bãi, đường nhánh, giữ làn)
+    this.lineUp = new Set(); this.waitAt = new Map(); this.waitOrder = []; this.release = new Map();
+    this.feedD = new Map(); this.feedFromX = new Map(); this.feedStartZ = new Map();
+    this.laneLeaving = new Map(); this.laneLeaveAt = new Map(); this.laneHoldStart = new Map(); this.laneEntering = new Map(); this.exitColOf = new Map();
+    this.lane = Array.from({ length: m.W }, (_, x) => ({ lock: m.locked[x] > 0, ice: m.ice[x] > 0, cur: m.curN[x] > 0, openLock: -1, openIce: -1, openCur: -1, pulseIce: -1, pulseCur: -1, barrierT: m.closed[x] ? 1 : -1, wait: m.elvWait[x], riseAt: -1 }));
     this.board = null;
     const L = this.L;
     m.cols.forEach((col, x) => { let b = 0; for (const k of col) { this.spawn(k.id, k.len, k.c, L.colCenter(x, b, k.len), Math.PI, { hidden: k.hidden, key: k.key, coc: k.coc }); b += k.len; } });
     for (const b of m.buses) if (!b.out && b.inGen < 0) this.spawn(b.carId, b.len, b.c, L.busCenter(b), 0, { hidden: b.hidden, coc: b.coc, box: b.box, gen: b.gen });
     for (const k of m.loop) { const p = L.bodyOnLoop(k.st - LAG_STATIONS, k.len); this.spawn(k.id, k.len, k.c, p, p.yaw, {}); }
-    for (const k of m.exits) this.spawn(k.id, k.len, k.c, L.gp(k.exitCol, m.H - m.hs[k.exitCol] - 0.62), Math.PI, {});
+    for (const k of m.exits) {
+      if (k.feeder) {
+        // xe trên đường nhánh: đặt theo tiến độ travel của model
+        this.feedFromX.set(k.id, k.feedFrom);
+        const total = L.feederLength(k.feedFrom, k.len), d = total * (1 - (k.travelTotal ? k.travel / k.travelTotal : 0));
+        this.feedD.set(k.id, d);
+        const p = L.feederAt(k.feedFrom, k.len, d);
+        this.spawn(k.id, k.len, k.c, p, p.yaw, {});
+      } else this.spawn(k.id, k.len, k.c, this.mouthPos(k.exitCol, 0, k.len), Math.PI, {});
+    }
     m.queue.forEach((k, i) => { const p = L.bayPos(i, k.len); this.spawn(k.id, k.len, k.c, p, p.yaw, {}); });
     this.transits = [];
     for (const t of transits) {
@@ -262,7 +288,7 @@ export class PlayView {
   // ---------- đồng bộ với model (SyncViews) ----------
   get vloop() { return this.L.spacing / TICK * TIME_SCALE * (this.endgame ? 1.4 : 1); }
 
-  sync(m, phase) {
+  sync(m, phase, dt = 0) {
     const L = this.L, VL = this.vloop;
     for (const b of m.buses) {
       if (b.out) continue;
@@ -278,27 +304,281 @@ export class PlayView {
         v.offset = { x: 0, z: f * bp.dist };
       } else v.offset = { x: 0, z: 0 };
     }
-    m.queue.forEach((k, i) => { const v = this.views.get(k.id); if (!v) return; const p = L.bayPos(i, k.len); v.setTarget(p, p.yaw); v.maxSpeed = VL * 1.5; v.follow = false; });
+    const fit = L.bayFit;
+    m.queue.forEach((k, i) => {
+      const v = this.views.get(k.id);
+      if (!v) return;
+      if (i === 0 && this.lineUp.size) for (const id of [...this.lineUp]) if (!m.loop.some(o => o.id === id) && !m.exits.some(o => o.id === id)) this.lineUp.delete(id);
+      // Chỗ 0 bị chiếm khi có xe đang xếp để nhập. Xe ngoài cột cổng chờ trong cột bãi của nó và chỉ lên cổng khi ở cổng
+      // còn chỗ, mỗi lần một xe (không có hàng hai bên để lách).
+      const n = i + this.lineUp.size;
+      if (this.waitOrRelease(k, v, L.bayPos(Math.min(n, fit - 1), k.len), n < fit && this.release.size === 0, dt)) return;
+      const p = L.bayPos(n, k.len); v.setTarget(p, p.yaw); v.maxSpeed = VL * 1.5; v.follow = false;
+    });
     for (const k of m.loop) {
       const v = this.views.get(k.id);
       if (!v) continue;
-      const u = k.st + phase - LAG_STATIONS, p = L.bodyOnLoop(u, k.len);
+      // Game gốc: xe chỉ nhập từ điểm lề đường dưới cổng, quay mặt về đường. Xe model cho lên vòng khi còn đang xếp ở
+      // chỗ chờ (quay ngang) chạy tới đó trước, nên không bao giờ quẹo sai hướng trước khi rẽ vào đường.
+      if (this.lineUp.has(k.id)) {
+        const bp = L.bayPos(0, k.len);
+        if (this.waitOrRelease(k, v, bp, true, dt)) continue;
+        if (!this.arrivedAt(v, bp)) { v.setTarget(bp, bp.yaw); v.maxSpeed = VL * 1.5; v.follow = false; v.hidden = false; continue; }
+        this.lineUp.delete(k.id);
+        if (m.cross) { this.feedStartZ.set(k.id, bp.z); this.feedFromX.set(k.id, bp.x); }
+      }
+      // Xe model đã cho nhập từ đường nhánh crossway: còn trên nhánh tới khi chỗ của nó trên vòng qua giao lộ.
+      const u = k.st + (k.dockWait ? 0 : k.held ? 1 : phase) - LAG_STATIONS;
+      if (this.feedD.has(k.id)) {
+        if (this.feedD.get(k.id) < this.feedLen(k) - 0.02 || this.slotDelta(k, true, phase) < -0.05) continue;
+        this.feedD.delete(k.id); this.feedFromX.delete(k.id); this.feedStartZ.delete(k.id);
+      }
+      const p = L.bodyOnLoop(u, k.len);
       v.setTarget(p, p.yaw); v.maxSpeed = VL * 2.2; v.key = false; v.coc = ''; v.follow = true; v.setLoop(L, u, k.len); v.hidden = false;
     }
+    // Xe bị đẩy khỏi làn đầy chờ khe trên đường: khi làn còn giữ (dưới) thì chờ ngay trong ô của nó trong làn.
+    const exitOff = new Map();
+    this.syncFeeder(m, phase, dt);
     for (const k of m.exits) {
+      if (k.feeder) continue;
       const v = this.views.get(k.id);
       if (!v) continue;
-      v.setTarget(L.gp(k.exitCol, m.H - m.hs[k.exitCol] - 0.62), Math.PI); v.maxSpeed = VL * 1.6; v.follow = false;
+      const x = k.exitCol, off = exitOff.get(x) || 0;
+      exitOff.set(x, off + k.len);
+      v.setTarget(this.mouthPos(x, off, k.len), Math.PI); v.maxSpeed = VL * 1.6; v.follow = false;
       v.hidden = false; v.key = false; v.coc = '';
     }
     m.cols.forEach((col, x) => {
+      // Xe trong làn đứng yên (dịch lên bằng độ dài xe đang ra) tới khi xe bị đẩy rời khỏi làn, để không chạy vào nó.
+      const hold = this.laneHold(m, x), entering = this.laneEntering.get(x) ?? -1;
       let b = 0;
       for (const k of col) {
-        const v = this.views.get(k.id);
-        if (v) { v.setTarget(L.colCenter(x, b, k.len), Math.PI); v.maxSpeed = VL * 1.6; v.follow = false; v.hidden = k.hidden; v.key = k.key; v.coc = k.coc; }
+        const v = this.views.get(k.id), cell = k.id === entering ? b : b + hold;
+        if (v) { v.setTarget(L.colCenter(x, cell, k.len), Math.PI); v.maxSpeed = VL * 1.6; v.follow = false; v.hidden = k.hidden; v.key = k.key; v.coc = k.coc; }
         b += k.len;
       }
     });
+    this.updateYield(m);
+  }
+
+  arrivedAt(v, p) { return (v.x - p.x) ** 2 + (v.z - p.z) ** 2 < 0.15 * 0.15 && Math.abs(wrapAngle(v.yaw - p.yaw)) < 12 * Math.PI / 180; }
+
+  // ---------- crossway: đường nhánh (đường dưới ngoài + cạnh phải dưới, một chiều, vào giao lộ) ----------
+  // Model chỉ đếm tick (car.travel); ở đây mỗi xe chạy dọc đường nhánh theo chỗ (tương lai) của nó trên vòng, không lùi,
+  // và giữ một thân xe với xe trước (xe từ các làn khác nhau đi chung).
+  stopBack(len) { return this.L.junctionZ - this.L.feederEndZ(len); }
+  feedStart(k) { return this.feedStartZ.has(k.id) ? this.feedStartZ.get(k.id) : NaN; }
+  feedLen(k) { return this.L.feederLength(this.feedFromX.get(k.id), k.len, this.feedStart(k)); }
+  feedRem(k) { return this.feedLen(k) - this.feedD.get(k.id) + this.stopBack(k.len); }
+
+  syncFeeder(m, phase, dt) {
+    if (!m.cross) return;
+    const L = this.L, VL = this.vloop, buf = [];
+    for (const k of m.exits) {
+      if (!k.feeder) continue;
+      if (!this.feedFromX.has(k.id)) {
+        this.feedFromX.set(k.id, k.feedFrom); this.feedD.set(k.id, 0);
+        // Xe bị đẩy khỏi làn khối dưới đi từ ô của nó rồi rẽ trái vào đường dưới.
+        const sv = this.views.get(k.id);
+        if (!this.lineUp.has(k.id) && sv && sv.z > L.roadBottomZ + 0.25) { this.feedStartZ.set(k.id, sv.z); this.feedFromX.set(k.id, sv.x); }
+      }
+      if (this.lineUp.has(k.id)) {
+        // Xe bãi: tới điểm lề đường quay lên trước (như bàn thường), rồi đi đường nhánh từ đó.
+        const lv = this.views.get(k.id);
+        if (!lv) continue;
+        const bp = L.bayPos(0, k.len);
+        if (this.waitOrRelease(k, lv, bp, true, dt)) continue;
+        if (!this.arrivedAt(lv, bp)) { lv.clearLoop(); lv.setTarget(bp, bp.yaw); lv.maxSpeed = VL * 1.5; lv.follow = false; lv.hidden = false; continue; }
+        this.lineUp.delete(k.id);
+        this.feedStartZ.set(k.id, bp.z); this.feedFromX.set(k.id, bp.x);
+      }
+      buf.push({ k, rem: this.feedRem(k), merged: false });
+    }
+    // Model đã cho nhập nhưng chưa lên vòng (sync): vẫn trên nhánh.
+    for (const k of m.loop) if (this.feedD.has(k.id)) buf.push({ k, rem: this.feedRem(k), merged: true });
+    buf.sort((a, b) => a.rem - b.rem);   // xe đầu trước (ít đường tới giao lộ nhất)
+    let prevRem = -Infinity, prevLen = 1;
+    for (const { k, merged } of buf) {
+      const v = this.views.get(k.id);
+      if (!v) continue;
+      const fx = this.feedFromX.get(k.id), total = this.feedLen(k);
+      // Theo chỗ (tương lai) của xe trên vòng: tới giao lộ cùng lúc với chỗ đó nên không phải dừng ở vạch. Chậm thì đuổi
+      // (1.6× tốc vòng); giao lộ bị chặn thì đứng ở vạch.
+      const want = total + this.slotDelta(k, merged, phase), cur = this.feedD.get(k.id);
+      let d = Math.min(Math.max(want, cur), cur + VL * 1.6 * dt, total);
+      if (prevRem > -Infinity) {
+        const minRem = prevRem + (L.lotCarLength(prevLen) + L.lotCarLength(k.len)) / 2 + FEED_GAP;
+        d = Math.min(d, total + this.stopBack(k.len) - minRem);
+      }
+      d = Math.max(cur, d);
+      this.feedD.set(k.id, d);
+      prevRem = total - d + this.stopBack(k.len); prevLen = k.len;
+      const p = L.feederAt(fx, k.len, d, this.feedStart(k));
+      v.clearLoop();
+      v.setTarget(p, p.yaw); v.maxSpeed = VL * 3; v.follow = true;
+      v.hidden = false; v.key = false; v.coc = '';
+    }
+  }
+
+  /** Quãng đường từ giao lộ tới giữa chỗ của xe trên vòng (âm = chỗ chưa tới giao lộ). Trước khi model cho nhập: ước lượng
+   * chỗ sẽ xuất hiện ở trạm entry khi hết travel tick. */
+  slotDelta(k, merged, phase) {
+    const L = this.L, m = this.m;
+    let uMid, ticksLeft = 0;
+    if (merged) uMid = k.st + (k.held ? 1 : phase) - LAG_STATIONS - (k.len - 1) / 2;
+    else { uMid = m.entry - LAG_STATIONS - (k.len - 1) / 2; ticksLeft = Math.max(0, k.travel - phase) + (k.travel === 0 ? 0.5 : 0); }
+    const per = L.perimeter;
+    let delta = (L.distOf(uMid) - L.distOf(L.junctionU)) % per;
+    if (delta > per / 2) delta -= per; else if (delta < -per / 2) delta += per;
+    return delta - ticksLeft * L.spacing;
+  }
+
+  // ---------- xe chờ trong cột bãi (không còn chỗ ở cổng), rồi lần lượt lên cổng ----------
+  addWait(id, x, len) { this.waitAt.set(id, { x, len }); this.waitOrder = this.waitOrder.filter(o => o !== id); this.waitOrder.push(id); }
+  removeWait(id) { this.waitAt.delete(id); this.waitOrder = this.waitOrder.filter(o => o !== id); }
+
+  waitPose(id) {
+    const { x, len } = this.waitAt.get(id), L = this.L;
+    let z = L.jamTopZ - 0.04;
+    for (const o of this.waitOrder) {
+      if (o === id) break;
+      const w = this.waitAt.get(o);
+      if (Math.abs(w.x - x) < 0.1) z -= L.lotCarLength(w.len) + 0.08;
+    }
+    return { x, z: z - L.lotCarLength(len) / 2, yaw: 0 };
+  }
+
+  /** Xe đang chờ / đang lên cổng: true khi được xử lý ở đây. mayGo: tới lượt rời chỗ chờ để tới dest. */
+  waitOrRelease(k, v, dest, mayGo, dt) {
+    if (this.waitAt.has(k.id)) {
+      if (!mayGo) { const w = this.waitPose(k.id); v.setTarget(w, w.yaw); v.maxSpeed = this.vloop * 1.5; v.follow = false; return true; }
+      const pts = this.L.releaseRoute({ x: v.x, z: v.z }, dest);
+      this.release.set(k.id, { pts, d: 0, total: polyLength(pts) });
+      this.removeWait(k.id);
+    }
+    const r = this.release.get(k.id);
+    if (!r) return false;
+    r.d = Math.min(r.total, r.d + this.vloop * 1.15 * dt * lerp(0.55, 1, clamp01(r.d / 0.6)));
+    const p = polyAt(r.pts, r.d);
+    v.setTarget(p, p.yaw); v.maxSpeed = 1000; v.follow = false;
+    if (r.d >= r.total - 1e-3) this.release.delete(k.id);
+    return true;
+  }
+
+  // ---------- nhường đường phía hình (UpdateRingTraffic + chặn ở điểm nhập của game gốc) ----------
+  // Model chạy vòng đồng bộ; hình chậm hơn và xe nhập mất thời gian cua, nên xe trên đường có thể đè xe đang ra làn. Theo
+  // thứ tự model: xe đang chạy không vượt đuôi xe trước, dừng trước điểm nhập của xe phía trước đang nhập rồi đuổi kịp;
+  // xe đang nhập chờ (ở cửa làn) khi xe phía trước còn che điểm nhập của nó.
+  gapCap(me, obstacles, wrap) {
+    const L = this.L, uM = me.carU - (me.loopLen - 1) / 2;
+    let bestDu = Infinity, lenO = 1;
+    for (const o of obstacles) {
+      if (o.v === me) continue;
+      const du = wrap(o.u - uM);
+      if (du > 0.01 && du < bestDu) { bestDu = du; lenO = o.len; }
+    }
+    if (bestDu > 6) return NaN;
+    const dMax = L.distOf(uM + bestDu) - (L.lotCarLength(lenO) + L.lotCarLength(me.loopLen)) / 2 - MIN_CAR_GAP;
+    return L.uOfDist(dMax) + (me.loopLen - 1) / 2;
+  }
+
+  /** u trên vòng của điểm nhập ngay trên lề đường (đường dưới phía trên chỗ 0). */
+  entryJunctionU() { const m = this.m, L = this.L; return m.entry + (L.bayPos(0, 1).x - L.loopAt(m.entry).x); }
+
+  updateYield(m) {
+    const L = this.L, buf = [];
+    for (const k of m.loop) { const v = this.views.get(k.id); if (v) { v.capU = NaN; v.holdJoin = false; v.holdPos = null; buf.push({ k, v }); } }
+    const n = buf.length, obstacles = [];
+    for (const { v } of buf) if (v.isRiding) obstacles.push({ u: v.carU - (v.loopLen - 1) / 2, len: v.loopLen, v });
+    for (const v of this.views.values()) if (v.exitingLoop) obstacles.push({ u: v.exitU - (v.loopLen - 1) / 2, len: v.loopLen, v });
+    // Xe đã bắt đầu cua vào đường giữ đoạn nó sẽ đáp xuống.
+    for (const { v } of buf) if (v.isJoining && v.joinStarted) { const z = v.joinZone(); if (z) obstacles.push({ u: (z.a + z.b) / 2, len: v.loopLen, v }); }
+    // Crossway: xe nhánh model đã cho nhập giữ chỗ của nó trên vòng khi còn trên nhánh, nên xe vòng phanh nhường.
+    const feederViews = new Set();
+    if (m.cross) for (const k of m.loop) if (this.feedD.has(k.id)) { const fv = this.views.get(k.id); if (fv) { obstacles.push({ u: L.uOfDist(L.distOf(L.junctionU) - this.feedRem(k)), len: k.len, v: fv }); feederViews.add(fv); } }
+    if (n < 1) return;
+    buf.sort((a, b) => a.k.st - b.k.st);
+    const N = Math.max(1, m.N), wrap = d => { d %= N; if (d > N / 2) d -= N; else if (d < -N / 2) d += N; return d; };
+    for (let i = 0; i < n; i++) {
+      const me = buf[i].v, ahead = n > 1 ? buf[(i + 1) % n].v : null;
+      if (me.isRiding) {
+        let best = NaN;
+        const take = cap => { if (wrap(cap - me.carU) <= -1) return; if (Number.isNaN(best) || wrap(cap - best) < 0) best = cap; };
+        const az = ahead && ahead.joinZone();
+        if (az) { if (wrap(me.carU - (az.a - 0.45)) < 0) take(az.a - 0.45); }
+        else if (ahead && this.lineUp.has(buf[(i + 1) % n].k.id)) take(this.entryJunctionU() - 0.6 - 0.45);
+        const gap = this.gapCap(me, obstacles, wrap);
+        if (!Number.isNaN(gap)) take(gap);
+        me.capU = best;
+      } else if (me.isJoining && !me.joinStarted) {
+        const z = me.joinZone();
+        if (z) {
+          const behind = n > 1 ? buf[(i - 1 + n) % n].v : null;
+          let block = false;
+          for (const o of obstacles) {
+            // Không tính chính nó, cũng không tính xe còn trên nhánh. Chỉ trước khi bắt đầu cua (cua đã bắt đầu không dừng).
+            if (o.v === me || feederViews.has(o.v)) continue;
+            const head = o.u + (o.len - 1) / 2 + 0.45, tail = o.u - (o.len - 1) / 2 - 0.45;
+            if (wrap(head - z.a) > 0 && wrap(tail - z.b) < 0) { block = true; break; }
+          }
+          if (!block && ahead && ahead !== me && !ahead.isRiding) { const p = ahead.joinZone(); if (p) block = wrap(p.b - z.a) > 0 && wrap(p.a - z.b) < 0; }
+          if (!block) for (const { v: v2 } of buf) if (v2 !== me && v2 !== behind && v2.isRiding && wrap(z.a - v2.carU) > 0 && wrap(z.a - v2.carU) < 1.2 && v2.speed > 0.5) { block = true; break; }
+          if (block) {
+            me.holdJoin = true;
+            const col = this.exitColOf.get(buf[i].k.id);
+            if (col !== undefined && col >= 0 && col < m.W) me.holdPos = this.mouthPos(col, 0, buf[i].k.len);
+          }
+        }
+      }
+      if (me.isRiding) this.exitColOf.delete(buf[i].k.id);
+    }
+  }
+
+  // ---------- giữ làn khi xe bị đẩy ra (sự kiện insert) ----------
+  noteLaneExit(e, m) {
+    if (e.col < 0 || !e.ejected?.length) return;
+    const leaving = this.laneLeaving.get(e.col) || [];
+    for (const id of e.ejected) if (!leaving.includes(id)) leaving.push(id);
+    this.laneLeaving.set(e.col, leaving);
+    // Làn khối dưới crossway đẩy xe ra đường nhánh: xe đó không chờ ở cửa làn.
+    if (!m.feedsOut(e.col)) for (const id of e.ejected) this.exitColOf.set(id, e.col);
+    this.laneLeaveAt.set(e.col, this.clock); this.laneHoldStart.set(e.col, this.clock);
+    this.laneEntering.set(e.col, e.id);
+  }
+
+  /** Số ô xe trong làn còn dịch lên khi xe bị đẩy ra còn ở trong làn. */
+  laneHold(m, x) {
+    const ids = this.laneLeaving.get(x);
+    if (!ids?.length) return 0;
+    let waiting = false;
+    for (const id of ids) {
+      const wv = this.views.get(id);
+      if (m.exits.some(c => c.id === id && !c.feeder) || (wv && wv.isJoining && !wv.joinStarted)) { waiting = true; break; }
+    }
+    if (waiting) this.laneLeaveAt.set(x, this.clock);
+    const stuck = this.clock - (this.laneHoldStart.get(x) ?? this.clock) > LANE_HOLD_SAFETY;
+    if (stuck || this.clock - this.laneLeaveAt.get(x) > LANE_HOLD_MAX) { ids.length = 0; return 0; }
+    // Xe đang vào sắp tới ô của nó: làn phải nhường chỗ ngay (trừ khi xe bị đẩy còn chờ trong ô).
+    const ev = this.views.get(this.laneEntering.get(x));
+    if (!waiting && ev && (ev.x - ev.tx) ** 2 + (ev.z - ev.tz) ** 2 < LANE_RELEASE_DIST ** 2) { ids.length = 0; return 0; }
+    const L = this.L, bottomZ = L.laneBottomEdgeZ(x), lx = L.lx(x);
+    let hold = 0;
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const len = this.lenOnRoad(m, ids[i]), v = this.views.get(ids[i]);
+      if (len <= 0 || !v) { ids.splice(i, 1); continue; }
+      if (v.z < bottomZ - L.lotCarLength(len) / 2 - 0.02 || Math.abs(v.x - lx) > L.jc * 0.8) { ids.splice(i, 1); continue; }
+      hold += len;
+    }
+    return hold;
+  }
+
+  /** Chỗ xe bị đẩy khỏi làn x chờ khe: không có khoảng trống ở cửa làn (như game gốc) nên chờ ngay trong ô của nó. */
+  mouthPos(x, off, len) { return this.L.colCenter(x, off, len); }
+
+  lenOnRoad(m, id) {
+    for (const c of m.exits) if (c.id === id) return c.len;
+    for (const c of m.loop) if (c.id === id) return c.len;
+    return 0;
   }
 
   // ---------- xe từ bãi ra cổng (StartTransit / UpdateTransits) ----------
@@ -314,8 +594,11 @@ export class PlayView {
     const b = { ...m.buses[busId] };
     const v = this.views.get(b.carId);
     if (!v) return;
-    const slots = this.transits.length;
-    const pts = this.L.transitRoute(b, m.queue.length + slots);
+    const L = this.L, bay = m.queue.length + this.transits.length + this.lineUp.size;
+    let pts;
+    // Ở cổng hết chỗ: xe tiến lên trong chính cột bãi của nó và chờ tới lượt.
+    if (bay >= L.bayFit) { this.addWait(car.id, L.waitX(b), b.len); pts = L.waitRoute(b, this.waitPose(car.id)); }
+    else pts = L.transitRoute(b, bay);
     v.hidden = false; v.key = false; v.coc = ''; v.offset = { x: 0, z: 0 }; v.maxSpeed = 1000;
     v.exhaustBurst();
     this.transits.push({ car, bus: b, view: v, pts, total: polyLength(pts), dist: 0, wait: 0 });
@@ -345,7 +628,7 @@ export class PlayView {
       for (const k of m.loop) this.views.get(k.id)?.punch();
       this.showPopup('SPEED UP!', '#ffd959', 0.9);
     }
-    this.sync(m, phase);
+    this.sync(m, phase, dt);
     if (dt > 0) { for (const v of this.views.values()) v.step(dt); for (const v of this.dying) v.step(dt); }
     const jobs = this.jobs;
     this.jobs = [];
@@ -429,7 +712,9 @@ export class PlayView {
     }
   }
 
-  laneCenter(x) { const h = this.m.hs[x]; return { x, y: 0.3, z: (this.m.H - h) + (h - 1) / 2 }; }
+  /** z tâm làn x (theo ô dưới cùng của làn). */
+  zc(x) { return this.L.lBottom(x) + (this.m.hs[x] - 1) / 2; }
+  laneCenter(x) { return { x: this.L.lx(x), y: 0.3, z: this.zc(x) }; }
 
   // ---------- sự kiện model (DrainEvents) ----------
   onEvents(events, m) {
@@ -441,6 +726,7 @@ export class PlayView {
           sound.play('insert', 0.7, 0.9 + 0.06 * filled);
           const v = this.views.get(e.id);
           if (v) v.onLanded = cv => { cv.squashIt(0.35); cv.onLanded = null; };
+          this.noteLaneExit(e, m);
           break;
         }
         case 'clear': this.parkCleared(e); this.jobs.push(this.clearRoutine(e)); break;
@@ -449,10 +735,10 @@ export class PlayView {
         case 'shift':
           for (const b of m.buses) if (!b.out && b.x === e.col) { const v = this.views.get(b.carId); if (v) { v.maxSpeed = 8; v.onLanded = cv => { cv.squashIt(0.5); cv.onLanded = null; }; } }
           break;
-        case 'enter': this.views.get(e.id)?.punch(); if (m.loopCells() >= m.cap) { this.flashSign('red'); } break;
+        case 'enter': this.views.get(e.id)?.punch(); this.lineUp.add(e.id); this.removeWait(e.id); if (m.loopCells() >= m.cap) { this.flashSign('red'); } break;
         case 'thaw': {
           const a = this.lane[e.col];
-          if (e.left === 0) { const c = this.laneCenter(e.col); this.burst('ice', c.x, c.y, c.z); sound.play('bump', 0.6, 1.25); }
+          if (e.left === 0) { const c = this.laneCenter(e.col); this.burst('ice', c.x, c.y, c.z); this.iceShards(e.col); sound.play('bump', 0.6, 1.25); }
           else if (a) a.pulseIce = this.clock;
           break;
         }
@@ -482,9 +768,10 @@ export class PlayView {
         case 'rise': {
           let b = 0, n = 0;
           for (const k of m.cols[e.col]) {
-            if (!this.views.has(k.id)) { const v = this.spawn(k.id, k.len, k.c, L.colCenter(e.col, b, k.len), Math.PI, { hidden: k.hidden, key: k.key, coc: k.coc }); v.introIt(0.05 + 0.05 * n++); }
+            if (!this.views.has(k.id)) { const v = this.spawn(k.id, k.len, k.c, L.colCenter(e.col, b, k.len), Math.PI, { hidden: k.hidden, key: k.key, coc: k.coc }); v.riseIt(0.15 + 0.06 * n++); }
             b += k.len;
           }
+          if (this.lane[e.col]) this.lane[e.col].riseAt = this.clock;   // cột sáng trắng khi tầng mới lên
           sound.play('go', 0.7, 0.9);
           break;
         }
@@ -499,7 +786,7 @@ export class PlayView {
           break;
         case 'won':
           sound.play('win');
-          this.burst('confetti', (m.W - 1) / 2, 0.5, m.H / 2);
+          this.burst('confetti', (m.BW - 1) / 2, 0.5, (L.topZ + L.roadBottomZ) / 2);
           this.kick(0.07); this.showPopup('Level Clear!', '#8cff99', 1.4);
           this.resultAt = this.clock + 1.2;
           break;
@@ -537,7 +824,7 @@ export class PlayView {
     this.lastClear = this.clock;
     sound.play('clear', 1, 1 + 0.07 * Math.min(this.combo - 1, 6));
     if (this.combo >= 2) this.showPopup(this.combo >= 4 ? `AMAZING x${this.combo}` : this.combo === 3 ? 'AWESOME x3' : 'GREAT x2', pal(e.c));
-    this.kick(0.025 + 0.01 * Math.min(this.combo, 4)); this.shake(0.12);
+    // Không rung / zoom camera khi xoá làn (Unity 25/11/2026): tiếng và hiệu ứng nổ đủ.
     for (const id of e.ids) { const v = this.views.get(id); if (v) { v.flash = 0.3; this.glow(v.x, v.z, pal(e.c), 0.45, false); } }
     yield* this.wait(0.05);
     let k = 0;
@@ -589,6 +876,16 @@ export class PlayView {
     }
   }
 
+  /** Băng vỡ: mảnh băng (ice_piece_01..05) bắn ra khỏi làn rồi rơi (ParkingBoardView.IceShards). */
+  iceShards(x) {
+    const L = this.L, n = 4 * this.m.hs[x] + 4;
+    for (let i = 0; i < n; i++) {
+      const life = rnd(0.55, 0.8);
+      this.fx.add({ kind: 'sprite', sprite: `ice_piece_${i % 5 + 1}`, x: L.lx(x) + rnd(-0.4, 0.4), y: 0.5, z: L.lBottom(x) - 0.4 + rnd(0, this.m.hs[x]),
+        vx: rnd(-1.6, 1.6), vy: rnd(2.2, 3.8), vz: rnd(-0.8, 0.8), gravity: 9, life, size: rnd(0.12, 0.22), shrink: 0, fadeEnd: 0.6, vr: rnd(-6, 6) });
+    }
+  }
+
   /** Quầng sáng mềm khi xoá làn (ClearGlow). */
   glow(x, z, hex, strength, sparks) {
     const c = hexMix(hex, '#ffffff', 0.4), jc = this.L.jc;
@@ -605,7 +902,7 @@ export class PlayView {
   // ---------- vẽ ----------
   /** Bàn tĩnh (nền, đường, vạch, cỏ) vẽ một lần vào canvas phụ. */
   buildBoard(dpr) {
-    const { W, H, s } = this.v, m = this.m, L = this.L, P = this.P;
+    const { W, H, s } = this.v, m = this.m, L = this.L;
     const cv = document.createElement('canvas'); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     const c = cv.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -617,43 +914,165 @@ export class PlayView {
       pat.setTransform(new DOMMatrix().translate(this.v.ox, this.v.oy).scale(k / iw(gi), k * SIN / ih(gi)));
       c.fillStyle = pat; c.fillRect(0, 0, W, H);
     }
-    // cỏ hai bên bãi (GrassArt)
+    // cỏ hai bên bãi (GrassArt): hai sprite có lề, phía ngoài lặp nửa ngoài của sprite (lật xen kẽ) tới mép màn hình
     const gTop = L.jamTopZ + 0.02;
     for (const left of [true, false]) {
       const top = img[left ? 'grass_right' : 'grass_left'], under = img[left ? 'grass_left' : 'grass_right'];
       if (!ok(top)) continue;
       const w = 3, h = w * ih(top) / iw(top), inset = 24 / 642 * w;
       const edge = left ? L.lotLeftX : L.lotRightX, cx = left ? edge - w / 2 + inset : edge + w / 2 - inset;
-      const far = 14, ox = left ? cx - w / 2 - far / 2 + 0.05 : cx + w / 2 + far / 2 - 0.05;
-      this.flatRect(c, ox, gTop - h, far, h * 2, COL.grassFar);
+      this.flatRect(c, cx + (left ? -0.05 : 0.05), gTop - h * 2 - 20 + 0.05, 40, 40, COL.grassFar);
+      this.grassStrips(c, left, top, false, cx, w, gTop - h / 2);
       this.flatImage(c, top, cx, gTop - h / 2, w, h, false);
-      if (ok(under)) this.flatImage(c, under, cx, gTop - h * 1.5 + 0.02, w, h, true);
+      if (ok(under)) { this.grassStrips(c, left, under, true, cx, w, gTop - h * 1.5 + 0.02); this.flatImage(c, under, cx, gTop - h * 1.5 + 0.02, w, h, true); }
     }
     // vạch chia cột bãi
     const lotLen = m.jh * L.jc + 14, lotCz = L.jamTopZ + 0.15 - lotLen / 2;
     for (let x = 1; x < m.jw; x++) this.flatRect(c, L.jamLeftX + x * L.jc, lotCz - 0.1, 0.035, lotLen - 0.2, COL.lotLine);
+    // crossway: mọi chỗ trong đường ngoài là nhựa đường (đường vòng ngoài vẽ đè lên)
+    if (m.cross) {
+      const ins = ok(img.road) ? 1.15 * (INNER_CUT_U - 0.5) - 0.02 : 0.5;
+      const fx0 = -1 + ins, fx1 = m.BW - ins, fz0 = L.roadBottomZ + ins, fz1 = L.topZ - ins;
+      this.flatRect(c, (fx0 + fx1) / 2, (fz0 + fz1) / 2, fx1 - fx0, fz1 - fz0, COL.crossRoad);
+    }
     // đường vòng (Road_Vertical trải dọc tim đường; mép trong mở trên các làn, mép ngoài mở ở cổng)
     this.drawRoad(c);
-    // vạch giữa đường
-    for (let d = 0.2; d < L.perimeter; d += 0.6) { const p = L.pathAt(d); this.flatRect(c, p.x, p.z, 0.06, 0.24, COL.lane, p.yaw); }
-    // vạch chia làn, mũi tên, làn màu
+    // nét đứt mờ đều cả vòng (mọi level dùng kiểu nét của game gốc)
+    const per = L.outerPerimeter, dashN = Math.max(4, Math.round(per / (m.cross ? CROSS_DASH_STEP : 0.6))), step = per / dashN;
+    for (let i = 0; i < dashN; i++) { const p = L.outerAt((i + 0.5) * step); this.flatRect(c, p.x, p.z, 0.055, 0.16, COL.crossDash, p.yaw); }
+    if (m.cross) this.drawMiddleRoad(c);
+    // vạch chia làn, mũi tên, làn màu, rào
     for (let x = 0; x < m.W; x++) {
-      const h = m.hs[x], zc = (m.H - h) + (h - 1) / 2;
-      if (x > 0) this.flatRect(c, x - 0.5, (m.H - 1) / 2, 0.035, m.H - 0.5, COL.curbShade);
-      this.arrow(c, x, m.H - 0.6); this.arrow(c, x, m.H - h - 0.4);
-      if (m.only[x]) { this.flatRect(c, x - 0.4, zc, 0.06, h - 0.2, pal(m.only[x])); this.flatRect(c, x + 0.4, zc, 0.06, h - 0.2, pal(m.only[x])); }
+      const lx = L.lx(x);
+      if (m.laneCol[x] > 0) {
+        let top = L.lTop(x) + 0.5 + L.laneEndGap * 0.75, bot = L.blockBottom(x) - 0.5 - L.laneEndGap * 0.75;
+        if (m.cross) {
+          // vạch nằm trong đảo của nó (không cắt qua đường giữa)
+          const upper = m.laneRow[x] === 1, cd = this.curbD;
+          top = upper ? Math.min(top, L.topZ - cd) : Math.min(top, L.middleZ - MID_CURB_D);
+          bot = upper ? Math.max(bot, L.middleZ + MID_CURB_D) : Math.max(bot, L.roadBottomZ + cd);
+        }
+        this.flatRect(c, lx - 0.5, (top + bot) / 2, 0.035, top - bot, COL.curbShade);
+      }
+      const barrierArt = m.barrier[x] && ok(img.barrier_plate);
+      if (m.only[x]) {
+        // làn màu (game gốc): mũi tên vào làn nằm trên ô màu của làn
+        const col = pal(m.only[x]), tz = L.topGapZ(x);
+        this.flatRound(c, lx, tz, 0.36, 0.26, 0.05, hexMix(col, '#000000', 0.15));
+        this.flatRound(c, lx, tz + 0.012, 0.33, 0.23, 0.045, col);
+        this.arrow(c, lx, tz, '#ffffff', 0.18, 0.12);
+      } else if (!barrierArt) this.arrow(c, lx, L.topGapZ(x));
+      if (!barrierArt) this.arrow(c, lx, L.bottomGapZ(x));
+      if (barrierArt) {
+        // rào (game gốc): tấm chắn ở hai đầu làn, dấu X sơn trong mỗi ô
+        const pi = img.barrier_plate, pw = 0.8, ph = pw * ih(pi) / iw(pi);
+        for (const z of [L.topGapZ(x), L.bottomGapZ(x)]) this.flatImage(c, pi, lx, z, pw, ph, false);
+        for (let i = 0; i < m.hs[x]; i++) for (const yaw of [Math.PI / 4, -Math.PI / 4]) this.flatRect(c, lx, L.lBottom(x) + i, 0.05, 0.42, COL.curbShade, yaw);
+      }
+      if (m.elvGroup[x] >= 0) this.drawElevator(c, x);
     }
     this.board = cv;
+  }
+
+  get curbD() { return ok(img.road) ? 1.15 * (0.5 - 0.1175) : 0.55; }
+
+  /** Cỏ chạy tiếp ra ngoài: nửa ngoài của sprite lặp 16 lần, bản xen kẽ lật gương để mép khớp. */
+  grassStrips(c, left, i, turned, cx, w, z) {
+    const rightHalf = left === turned, sw = w / 2, h = w * ih(i) / iw(i), dir = left ? -1 : 1, s = this.v.s;
+    for (let k = 0; k < 16; k++) {
+      const x = cx + dir * (w / 2 + sw / 2 + k * sw) - dir * 0.005 * (k + 1), [px, py] = this.P(x, 0, z);
+      if (px + sw * s < 0 || px - sw * s > this.v.W) continue;
+      c.save(); c.translate(px, py); if (turned) c.rotate(Math.PI); if (k % 2 === 0) c.scale(-1, 1);
+      c.drawImage(i, rightHalf ? iw(i) / 2 : 0, 0, iw(i) / 2, ih(i), -sw * s / 2, -h * s * SIN / 2, sw * s, h * s * SIN);
+      c.restore();
+    }
+  }
+
+  /** Crossway: đường giữa giữa hai đảo làn (đảo nền tối, lề trắng hai cạnh bên), nét đứt, cua trái chấm, mũi tên giao lộ, rào. */
+  drawMiddleRoad(c) {
+    const m = this.m, L = this.L, x0 = -1, x1 = m.BW, z = L.middleZ, cd = this.curbD;
+    for (let row = 0; row <= 1; row++) {
+      if (!m.laneRow.some(r => r === row)) continue;
+      const bot = row === 0 ? L.roadBottomZ + cd : z + MID_CURB_D, top = row === 0 ? z - MID_CURB_D : L.topZ - cd;
+      const il = x0 + cd, ir = x1 - cd, cz = (bot + top) / 2, len = top - bot, icx = (il + ir) / 2, hw = (ir - il) / 2, rad = Math.min(0.72, len / 2 - 0.01);
+      this.flatRound(c, icx, cz, ir - il, len, rad, COL.crossIsland);
+      // lề trắng: chỉ hai cạnh bên + móc ngắn vào góc (|x - tâm| ≥ hw - 0.4·rad)
+      const P = this.P, s = this.v.s;
+      c.lineWidth = 0.07 * s; c.lineCap = 'butt'; c.strokeStyle = COL.curb;
+      for (const sd of [-1, 1]) {
+        const ex = icx + sd * hw, cut = hw - 0.4 * rad;
+        c.beginPath();
+        const pts = [];
+        // cung trên → cạnh → cung dưới, chỉ phần |x - icx| ≥ cut
+        for (let k = 0; k <= 12; k++) { const a = Math.PI / 2 * k / 12; pts.push([icx + sd * (hw - rad + rad * Math.sin(a)), cz + len / 2 - rad + rad * Math.cos(a)]); }
+        for (let k = 0; k <= 12; k++) { const a = Math.PI / 2 * k / 12; pts.push([icx + sd * (hw - rad + rad * Math.cos(a)), cz - len / 2 + rad - rad * Math.sin(a)]); }
+        let on = false;
+        for (const [px, pz] of pts) {
+          if (Math.abs(px - icx) < cut) { on = false; continue; }
+          const q = P(px, 0, pz);
+          if (on) c.lineTo(...q); else { c.moveTo(...q); on = true; }
+        }
+        c.stroke();
+        void ex;
+      }
+    }
+    // nét đứt đường giữa, đều từ cuối cua trái tới đầu mũi tên
+    const dA = x0 + LOOP_R + 0.06, dB = x1 - 0.5 - 0.45 - 0.12, n = Math.max(1, Math.round((dB - dA) / CROSS_DASH_STEP)), st = (dB - dA) / n;
+    for (let i = 0; i < n; i++) this.flatRect(c, dA + (i + 0.5) * st, z, 0.055, 0.16, COL.crossDash, Math.PI / 2);
+    // chấm cong chỗ vòng rẽ từ cạnh trái vào đường giữa
+    const r = LOOP_R, arc = Math.PI * r / 2, d3 = (x1 - x0 - 2 * r) + arc + (L.topZ - z - 2 * r);
+    for (let i = 0; i < 3; i++) { const p = L.pathAt(d3 + (i + 0.5) * arc / 3); this.flatRect(c, p.x, p.z, 0.055, 0.16, COL.crossDash, p.yaw); }
+    // mũi tên lớn mờ ở cạnh phải trên giao lộ chỉ đường lên
+    const ar = 0.5, P = this.P, s = this.v.s, line = [];
+    for (let ax = x1 - ar - 0.45; ax < x1 - ar; ax += 0.05) line.push(P(ax, 0, z));
+    for (let k = 0; k <= 12; k++) { const th = -Math.PI / 2 + k * Math.PI / 24; line.push(P(x1 - ar + ar * Math.cos(th), 0, z + ar + ar * Math.sin(th))); }
+    const tipZ = z + ar + 0.85;
+    line.push(P(x1, 0, tipZ));
+    c.strokeStyle = COL.crossArrow; c.lineWidth = 0.06 * s; c.lineJoin = 'round'; c.lineCap = 'round';
+    c.beginPath(); line.forEach((p, i) => (i ? c.lineTo(...p) : c.moveTo(...p))); c.stroke();
+    c.beginPath(); c.moveTo(...P(x1 - 0.2, 0, tipZ - 0.2)); c.lineTo(...P(x1, 0, tipZ)); c.lineTo(...P(x1 + 0.2, 0, tipZ - 0.2)); c.stroke();
+    // cạnh trái ngoài dưới đường giữa bị chắn (rào hồi sinh): cột ở mép ngoài, tay chắn ngang đường
+    this.poleBarrier(c, x0 - 0.47, z - 0.62, 0, Math.PI);
+  }
+
+  /** Thang máy (game gốc): sàn thép gân, sọc vàng đen hai mép dài, nắp hai đầu (Platform_Top / Platform_Under). */
+  drawElevator(c, x) {
+    const L = this.L, lx = L.lx(x), zc = this.zc(x), len = this.m.hs[x] + L.laneEndGap * 1.6;
+    this.flatRound(c, lx, zc, 0.9, len, 0.12, COL.elvFloor);
+    let row = 0;
+    for (let z = -len / 2 + 0.2; z < len / 2 - 0.15; z += 0.17, row++)
+      for (let bx = -0.27 + (row % 2) * 0.09; bx <= 0.28; bx += 0.18) this.flatRect(c, lx + bx, zc + z, 0.05, 0.15, COL.elvBump, ((row + Math.round(bx * 10)) % 2 === 0 ? 40 : -40) * Math.PI / 180);
+    for (const sd of [-1, 1]) { let i = 0; for (let z = -len / 2 + 0.16; z < len / 2 - 0.1; z += 0.11, i++) this.flatRect(c, lx + sd * 0.4, zc + z, 0.07, 0.11, i % 2 ? COL.elvBlack : COL.elvYellow); }
+    const topZ = zc + len / 2 - 0.13, botZ = zc - len / 2 + 0.13, pt = img.platform, pu = ok(img.platform_under) ? img.platform_under : pt;
+    if (ok(pt)) { this.flatImage(c, pt, lx, topZ, 0.78, 0.78 * ih(pt) / iw(pt), true); this.flatImage(c, pu, lx, botZ, 0.78, 0.78 * ih(pu) / iw(pu), false); }
+    else { this.flatRound(c, lx, topZ, 0.78, 0.22, 0.08, COL.elvBump); this.flatRound(c, lx, botZ, 0.78, 0.22, 0.08, COL.elvBump); }
+  }
+
+  /** Rào cột + tay chắn đỏ trắng (Parking_Barrier): cột ở (x, z), tay về -x (quay yaw), nâng ang (0 = đóng ngang). */
+  poleBarrier(c, px, pz, ang, yaw = 0, s0 = null) {
+    const P = this.P, s = s0 ?? this.v.s, py = 0.243, len = 0.92, cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const at = (u, y) => P(px - u * cy, y, pz + u * sy);
+    const dx = Math.cos(ang), dy = -Math.sin(ang);
+    const [bx0, by0] = P(px, 0, pz), [bx1, by1] = P(px, py, pz);
+    c.strokeStyle = '#b8282b'; c.lineWidth = 0.08 * s; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(bx0, by0); c.lineTo(bx1, by1); c.stroke();
+    for (let k = 0; k < 4; k++) {
+      const [ax, ay] = at(dx * len * k / 4, py + dy * len * k / 4), [ex, ey] = at(dx * len * (k + 1) / 4, py + dy * len * (k + 1) / 4);
+      c.strokeStyle = k % 2 ? '#fff7de' : '#e63333'; c.lineWidth = 0.07 * s; c.lineCap = 'butt';
+      c.beginPath(); c.moveTo(ax, ay); c.lineTo(ex, ey); c.stroke();
+    }
+    c.fillStyle = '#2d3046'; c.beginPath(); c.arc(bx1, by1, 0.06 * s, 0, TAU); c.fill();
   }
 
   drawRoad(c) {
     const L = this.L, m = this.m, P = this.P, ri = img.road;
     const pts = [];
-    for (let d = 0; d < L.perimeter - 1e-3; d += 0.05) pts.push(L.pathAt(d));
+    for (let d = 0; d < L.outerPerimeter - 1e-3; d += 0.05) pts.push(L.outerAt(d));
     const rw = 1.15, half = rw / 2, darkU = 0.173, bw = L.bayWidth, gx = L.gateX;
-    const inGate = p => p.z < -1 + 0.05 && Math.abs(p.x - gx) < (L.directEntry ? bw * 1.2 : bw * 1.5 + 0.02);
-    const overCols = p => (p.z > m.H - 0.05 || p.z < -1 + 0.05) && p.x > -0.5 && p.x < m.W - 0.5;
-    const tile = (() => { const t = ok(ri) ? rw * ih(ri) / iw(ri) : 1; return L.perimeter / Math.max(2, 2 * Math.round(L.perimeter / (2 * t))); })();
+    const inGate = p => p.z < L.roadBottomZ + 0.05 && Math.abs(p.x - gx) < (L.directEntry ? bw * 1.2 : bw * 1.5 + 0.02);
+    // mép trong mở trên các làn (crossway: không có mép trong, đảo có lề riêng); cắt ở u 0.785, tránh vệt bóng tối của lề
+    const overCols = m.cross ? () => true : p => (p.z > L.topZ - 0.05 || p.z < L.roadBottomZ + 0.05) && p.x > -0.5 && p.x < m.BW - 0.5;
+    const tile = (() => { const t = ok(ri) ? rw * ih(ri) / iw(ri) : 1; return L.outerPerimeter / Math.max(2, 2 * Math.round(L.outerPerimeter / (2 * t))); })();
     const warn = [];
     let run = null, along = 0;
     for (let i = 0; i < pts.length; i++) {
@@ -662,7 +1081,7 @@ export class PlayView {
       // pháp tuyến ra ngoài = bên phải hướng chạy (vòng ngược chiều kim đồng hồ)
       const nx = Math.cos(a.yaw), nz = -Math.sin(a.yaw);
       const oOut = inGate(a) ? half - darkU * rw : half, uOut = inGate(a) ? darkU : 0;
-      const oIn = overCols(a) ? half - darkU * rw : half, uIn = overCols(a) ? 1 - darkU : 1;
+      const oIn = overCols(a) ? half - (1 - INNER_CUT_U) * rw : half, uIn = overCols(a) ? INNER_CUT_U : 1;
       const A = P(a.x + nx * oOut, 0, a.z + nz * oOut), B = P(a.x - nx * oIn, 0, a.z - nz * oIn);
       const fx = Math.sin(a.yaw), fz = Math.cos(a.yaw), ext = seg * 1.6 + 0.01;
       const D = P(a.x + nx * oOut + fx * ext, 0, a.z + nz * oOut + fz * ext);
@@ -690,6 +1109,13 @@ export class PlayView {
     c.fillStyle = color; c.beginPath(); c.moveTo(...pt(-w / 2, -h / 2)); c.lineTo(...pt(w / 2, -h / 2)); c.lineTo(...pt(w / 2, h / 2)); c.lineTo(...pt(-w / 2, h / 2)); c.closePath(); c.fill();
   }
 
+  /** Hình chữ nhật bo góc nằm trên mặt đất. */
+  flatRound(c, x, z, w, h, r, color) {
+    const [x0, y0] = this.P(x - w / 2, 0, z + h / 2), [x1, y1] = this.P(x + w / 2, 0, z - h / 2), s = this.v.s;
+    c.save(); c.translate(x0, y0); c.scale(1, SIN); round(c, 0, 0, x1 - x0, (y1 - y0) / SIN, r * s); c.restore();
+    c.fillStyle = color; c.fill();
+  }
+
   flatImage(c, i, x, z, w, h, turn) {
     const [px, py] = this.P(x, 0, z), s = this.v.s;
     c.save(); c.translate(px, py); if (turn) c.rotate(Math.PI);
@@ -697,9 +1123,9 @@ export class PlayView {
     c.restore();
   }
 
-  arrow(c, x, z) {   // ParkingMesh.Arrow(0.2, 0.13) quay 180°: mũi chỉ xuống
+  arrow(c, x, z, color = COL.curbShade, w = 0.2, h = 0.13) {   // ParkingMesh.Arrow(0.2, 0.13) quay 180°: mũi chỉ xuống
     const P = this.P;
-    c.fillStyle = COL.curbShade; c.beginPath(); c.moveTo(...P(x, 0, z - 0.065)); c.lineTo(...P(x - 0.1, 0, z + 0.065)); c.lineTo(...P(x + 0.1, 0, z + 0.065)); c.closePath(); c.fill();
+    c.fillStyle = color; c.beginPath(); c.moveTo(...P(x, 0, z - h / 2)); c.lineTo(...P(x - w / 2, 0, z + h / 2)); c.lineTo(...P(x + w / 2, 0, z + h / 2)); c.closePath(); c.fill();
   }
 
   /** Vẽ một khung. o: { dpr, hint (bus id), edit: { lane, empty } }. Trả về vùng bấm (px CSS). */
@@ -721,14 +1147,11 @@ export class PlayView {
       c.strokeStyle = `rgba(${COL.warnCurb.join(',')},${this.warnK})`; c.lineWidth = this.warnWidth * s; c.lineJoin = 'round';
       for (const run of this.warnPaths) { c.beginPath(); run.forEach((p, i) => (i ? c.lineTo(...p) : c.moveTo(...p))); c.stroke(); }
     }
-    // tấm thang máy
+    // thang máy: số tầng còn lại trên nắp dưới (đỏ cam khi đang chờ cả nhóm), cột sáng trắng khi tầng mới lên
     for (let x = 0; x < m.W; x++) {
-      const lv = m.elvLevels[x]?.length || 0;
-      if (!lv) continue;
-      const z = m.H - m.hs[x] - 0.45, pi = img.platform;
-      if (ok(pi)) { const src = this.lane[x]?.wait ? tinted('platform', '#ff9966') : pi; this.flatImage(c, src, x, z, 0.62, 0.62 * ih(pi) / iw(pi), false); }
-      const [lx, ly] = P(x, 0.15, z - 0.02);
-      label(c, `x${lv}`, lx, ly, 0.22 * s, '#ffffff');
+      if (m.elvGroup[x] < 0) continue;
+      const lv = m.elvLevels[x]?.length || 0, len = m.hs[x] + L.laneEndGap * 1.6, z = this.zc(x) - len / 2 + 0.13;
+      if (lv) { const [lx, ly] = P(L.lx(x), 0.15, z - 0.02); label(c, `x${lv}`, lx, ly, 0.22 * s, this.lane[x]?.wait ? '#ffb38a' : '#ffffff'); }
     }
     // vệt bánh
     c.lineCap = 'round';
@@ -762,7 +1185,7 @@ export class PlayView {
       this.drawLaneBoxes(m, false);
       for (const v of cars) {
         if (!visible(v)) continue;
-        if (v.box) { this.crate(v); continue; }
+        if (v.box) continue;   // hộp khoá: ổ khoá vàng lớn đứng trong ô (vẽ 2D bên dưới)
         if (v.gen) { this.garage(v); continue; }
         const ps = v.popScale || 1, b = v.body;
         gl.draw({ x: v.x, z: v.z, yaw: v.yaw, len: v.len, lengthWorld: v.lengthWorld, color: pal(v.hidden ? '?' : v.color), flash: v.flash,
@@ -774,13 +1197,24 @@ export class PlayView {
       c.drawImage(gl.canvas, 0, 0, W, H);
     }
     // vật cản phủ lên xe, nhãn, chìa khoá, vật rèm
+    const covered = new Set();   // xe trong làn bị che (gara, băng, rèm, thang máy chờ): không vẽ dấu '?'
+    m.cols.forEach((col, x) => { if (m.covered(x)) for (const k of col) covered.add(k.id); });
     for (let x = 0; x < m.W; x++) this.drawLaneOverlay(c, m, x);
     for (const v of cars) {
       const k = v.body.scale ?? 1;
       if (!visible(v) || k < 0.05) continue;
-      if (v.key) { const [kx, ky] = P(v.x, 0.49 + v.body.y, v.z); const ki = img.lockkey; if (ok(ki)) { const w = 0.42 * s * k; c.drawImage(ki, kx - w / 2, ky - w * 0.8, w, w * ih(ki) / iw(ki)); } }
+      // chìa vàng nằm dọc trên nóc xe (trên nóc thật, không chìm), không bóng
+      if (v.key) { const [kx, ky] = P(v.x, 0.78 + v.body.y, v.z); const ki = img.lockkey; if (ok(ki)) { const w = 0.4 * s * k; c.drawImage(ki, kx - w / 2, ky - w * 0.6, w, w * ih(ki) / iw(ki)); } }
+      // xe ẩn (game gốc): vỏ bóng tím nhạt quanh xe + dấu '?' trắng lớn phía trên
+      if (v.hidden && !v.box && !v.gen && !covered.has(v.id)) {
+        const [hx, hy] = P(v.x, 0.3 + v.body.y, v.z), rw = 0.86 * s * k / 2, rl = (v.lengthWorld + 0.14) * s * k / 2;
+        c.save(); c.translate(hx, hy); c.scale(1, SIN); c.rotate(v.yaw); c.globalAlpha = 0.38; c.fillStyle = '#dbd6ff';
+        c.beginPath(); c.ellipse(0, 0, rw, rl, 0, 0, TAU); c.fill(); c.restore(); c.globalAlpha = 1;
+        const qi = img.question;
+        if (ok(qi)) { const [qx, qy] = P(v.x, 0.87 + v.body.y, v.z), w = 0.3 * s * k; c.drawImage(qi, qx - w / 2, qy - w * ih(qi) / iw(qi) / 2, w, w * ih(qi) / iw(qi)); }
+      }
       if (v.coc) { const f = 0.1 * v.lengthWorld, [ox, oy] = P(v.x + Math.sin(v.yaw) * f, 0.67 + v.body.y, v.z + Math.cos(v.yaw) * f); const sp = tinted('splash', pal(v.coc)); if (sp) { const w = 0.44 * s * k; c.drawImage(sp, ox - w / 2, oy - w / 2, w, w * ih(sp) / iw(sp)); } }
-      if (v.box) { const [lx, ly] = P(v.x, 0.62, v.z); const li = img.lock; if (ok(li)) { const w = 0.5 * s * k; c.drawImage(li, lx - w / 2, ly - w / 2, w, w * ih(li) / iw(li)); } }
+      if (v.box) { const [lx, ly] = P(v.x, 0.3, v.z); const li = img.lock; if (ok(li)) { const w = 0.78 * s * k; c.drawImage(li, lx - w / 2, ly - w / 2, w, w * ih(li) / iw(li)); } }
       if (v.gen) { const [lx, ly] = P(v.x, 0.82, v.z); label(c, String(m.generatorLeft(m.buses.find(b => b.carId === v.id)?.id ?? -1)), lx, ly, 0.34 * s, '#ffffff'); }
     }
     // gợi ý bấm
@@ -822,17 +1256,17 @@ export class PlayView {
         if (!va || !vb) continue;
         const [x0, y0] = this.P(va.x, 0.28, va.z), [x1, y1] = this.P(vb.x, 0.28, vb.z), len = Math.hypot(x1 - x0, y1 - y0), th = 0.16 * s;
         c.save(); c.translate(x0, y0); c.rotate(Math.atan2(y1 - y0, x1 - x0));
-        if (ok(ri)) { const t = th * iw(ri) / ih(ri); for (let d = 0; d < len; d += t) c.drawImage(ri, 0, 0, Math.min(1, (len - d) / t) * iw(ri), ih(ri), d, -th / 2, Math.min(t, len - d), th); }
+        // mỗi nửa dây theo màu xe của nó (game gốc: cùng màu thì một màu, khác thì nửa này nửa kia); xe ẩn = màu '?'
+        if (ok(ri)) {
+          const t = th * iw(ri) / ih(ri), half = len / 2;
+          const tint = b => tinted('rope', hexMix(pal(b.hidden ? '?' : b.c), '#ffffff', 0.15)) || ri;
+          for (const [src, from, to] of [[tint(list[k - 1]), 0, half], [tint(list[k]), half, len]])
+            for (let d = from; d < to; d += t) c.drawImage(src, 0, 0, Math.min(1, (to - d) / t) * iw(ri), ih(ri), d, -th / 2, Math.min(t, to - d), th);
+        }
         else { c.fillStyle = '#d8c39a'; c.fillRect(0, -th / 2, len, th); }
         c.restore();
       }
     }
-  }
-
-  crate(v) {   // SetBox: thùng gỗ + nắp
-    const gl = this.gl, L = v.lengthWorld, b = v.body;
-    gl.box({ x: v.x, y: 0.27 + b.y, z: v.z, sx: 0.82 * b.sx, sy: 0.54 * b.sy, sz: L * 0.95 * b.sz, yaw: v.yaw, color: [0.45, 0.3, 0.18] });
-    gl.box({ x: v.x, y: 0.55 * b.sy + b.y, z: v.z, sx: 0.86 * b.sx, sy: 0.04, sz: L * b.sz, yaw: v.yaw, color: [0.6, 0.42, 0.25] });
   }
 
   garage(v) {   // SetGen: gara (màu vật liệu của prefab Garage Obstacle)
@@ -856,39 +1290,43 @@ export class PlayView {
     return e < 0.1 ? lerp(1, peak, ease.outQuad(e / 0.1)) : lerp(peak, 1, ease.outQuad(clamp01((e - 0.1) / 0.2)));
   }
 
-  /** Thùng khoá (BuildContainer) và tấm băng (BuildIce): khối 3D phủ lên xe trong làn. */
+  /** Gara khoá (BuildContainer) và tấm băng (BuildIce): khối 3D phủ kín xe trong làn. */
   drawLaneBoxes(m, transparent) {
-    const gl = this.gl;
+    const gl = this.gl, L = this.L;
     for (let x = 0; x < m.W; x++) {
-      const a = this.lane[x], h = m.hs[x], zc = (m.H - h) + (h - 1) / 2;
+      const a = this.lane[x], h = m.hs[x], zc = this.zc(x), lx = L.lx(x);
       if (!a) continue;
       if (!transparent) {
         const an = a.lock ? { up: 0, sc: 1 } : this.laneAnim(a.openLock);
         if (an) {
-          const byColor = !!m.lockC[x], shell = byColor ? hexMix(pal(m.lockC[x]), COL.ink, 0.45) : COL.ink, len = (h - 0.1) * an.sc, sc = an.sc, y0 = an.up;
-          gl.box({ x, y: y0 + 0.22 * sc, z: zc, sx: 0.9 * sc, sy: 0.44 * sc, sz: len, color: shell });
-          gl.box({ x, y: y0 + 0.46 * sc, z: zc, sx: 0.96 * sc, sy: 0.05 * sc, sz: len + 0.06 * sc, color: hexMix(shell, '#ffffff', 0.25) });
-          for (const sd of [-1, 1]) for (let z = -len / 2 + 0.3 * sc; z < len / 2 - 0.2 * sc; z += 0.45 * sc) gl.box({ x: x + sd * 0.455 * sc, y: y0 + 0.22 * sc, z: zc + z, sx: 0.03 * sc, sy: 0.4 * sc, sz: 0.08 * sc, color: hexMix(shell, '#000000', 0.2) });
-          if (byColor) gl.draw({ x, y: y0 + 0.49 * sc, z: zc, yaw: 0, len: 1, lengthWorld: 0.62, color: pal(m.lockC[x]), body: { sx: 0.75 * sc, sy: 0.75 * sc, sz: 0.75 * sc } });
+          // Gara (game gốc): khối tím, nắp xanh nhạt có rãnh, cột tròn bốn góc; icon xe màu mở khoá trên nóc. Đủ cao che nóc xe.
+          const byColor = !!m.lockC[x], shell = byColor ? COL.garageSide : COL.ink, lid = byColor ? COL.garageLid : hexMix(shell, '#ffffff', 0.25);
+          const sc = an.sc, y0 = an.up, Hh = 0.78 * sc, Wd = 0.9 * sc, len = (h - 0.04) * sc;
+          gl.box({ x: lx, y: y0 + Hh / 2, z: zc, sx: Wd, sy: Hh, sz: len, color: shell });
+          gl.box({ x: lx, y: y0 + Hh + 0.02 * sc, z: zc, sx: Wd - 0.1 * sc, sy: 0.05 * sc, sz: len - 0.12 * sc, color: lid });
+          const groove = hexMix(lid, COL.garageSide, 0.55);
+          for (let z = -len / 2 + 0.28 * sc; z < len / 2 - 0.2 * sc; z += 0.26 * sc) gl.box({ x: lx, y: y0 + Hh + 0.05 * sc, z: zc + z, sx: Wd * 0.62, sy: 0.012 * sc, sz: 0.07 * sc, color: groove });
+          for (const sx of [-1, 1]) for (const sz of [-1, 1]) gl.box({ x: lx + sx * (Wd / 2 - 0.02 * sc), y: y0 + Hh / 2 + 0.03 * sc, z: zc + sz * (len / 2 - 0.02 * sc), sx: 0.13 * sc, sy: Hh + 0.06 * sc, sz: 0.13 * sc, color: hexMix(shell, '#ffffff', 0.12) });
+          if (byColor) gl.draw({ x: lx, y: y0 + Hh + 0.05 * sc, z: zc, yaw: 0, len: 1, lengthWorld: 0.62, color: pal(m.lockC[x]), body: { sx: 0.75 * sc, sy: 0.75 * sc, sz: 0.75 * sc } });
         }
       } else {
         const an = a.ice ? { up: 0, sc: this.pulse(a.pulseIce, 1.06) } : this.laneAnim(a.openIce);
-        if (an) gl.box({ x, y: an.up + 0.3 * an.sc, z: zc, sx: 0.92 * an.sc, sy: 0.6 * an.sc, sz: (h - 0.04) * an.sc, color: [0.75, 0.92, 1], alpha: 0.62, rough: 0.1 });
+        if (an) gl.box({ x: lx, y: an.up + 0.43 * an.sc, z: zc, sx: 0.94 * an.sc, sy: 0.86 * an.sc, sz: (h + 0.02) * an.sc, color: [0.75, 0.92, 1], alpha: 0.62, rough: 0.1 });
       }
     }
   }
 
   drawLaneOverlay(c, m, x) {
-    const a = this.lane[x], P = this.P, s = this.v.s;
+    const a = this.lane[x], P = this.P, s = this.v.s, L = this.L;
     if (!a) return;
-    const h = m.hs[x], zc = (m.H - h) + (h - 1) / 2;
+    const h = m.hs[x], zc = this.zc(x), lx = L.lx(x);
     // số lần xoá còn lại của khoá đếm
-    if (a.lock && !m.lockC[x]) { const [lx, ly] = P(x, 0.55, zc); label(c, String(m.locked[x]), lx, ly, 0.4 * s, '#ffffff'); }
+    if (a.lock && !m.lockC[x]) { const [px, py] = P(lx, 0.9, zc); label(c, String(m.locked[x]), px, py, 0.4 * s, '#ffffff'); }
     // băng: vân băng trên mặt + số
     const ice = a.ice ? { up: 0, sc: this.pulse(a.pulseIce, 1.06) } : this.laneAnim(a.openIce);
     if (ice) {
-      const tex = img.ice_tex, y = ice.up + 0.6 * ice.sc, hw = 0.46 * ice.sc, hl = (h - 0.04) / 2 * ice.sc;
-      const [x0, y0] = P(x - hw, y, zc + hl), [x1, y1] = P(x + hw, y, zc - hl);
+      const tex = img.ice_tex, y = ice.up + 0.86 * ice.sc, hw = 0.47 * ice.sc, hl = (h + 0.02) / 2 * ice.sc;
+      const [x0, y0] = P(lx - hw, y, zc + hl), [x1, y1] = P(lx + hw, y, zc - hl);
       if (ok(tex)) {
         c.save(); c.globalAlpha = 0.45; c.globalCompositeOperation = 'screen';
         const pat = c.createPattern(tex, 'repeat'); pat.setTransform(new DOMMatrix().translate(x0, y0).scale(s * 1.2 / iw(tex)));
@@ -896,7 +1334,7 @@ export class PlayView {
       }
       c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = Math.max(1, s * 0.03); c.strokeRect(x0, y0, x1 - x0, y1 - y0);
       if (a.ice) {
-        const [bx, by] = P(x, 0.7, zc), k = this.pulse(a.pulseIce, 1.3);
+        const [bx, by] = P(lx, 0.96, zc), k = this.pulse(a.pulseIce, 1.3);
         badge(c, bx, by, String(m.ice[x]), 0.5 * s * k);
       }
     }
@@ -907,32 +1345,42 @@ export class PlayView {
       if (ok(mid)) {
         const w = 1.06 * cur.sc * s, ph = w * ih(mid) / iw(mid);
         for (let i = h - 1; i >= 0; i--) {
-          const z = zc - (h - 1) / 2 + i, [px, py] = P(x, 0.75 + cur.up, z), src = i === 0 && ok(under) ? under : mid;
+          const z = zc - (h - 1) / 2 + i, [px, py] = P(lx, 0.75 + cur.up, z), src = i === 0 && ok(under) ? under : mid;
           const hh = w * ih(src) / iw(src);
           c.drawImage(src, px - w / 2, py - hh / 2, w, hh);
           if (i === h - 1 && ok(top)) { const th = w * ih(top) / iw(top); c.drawImage(top, px - w / 2, py - ph / 2 - th * 0.55, w, th); }
         }
       }
       if (a.cur) {
-        const fz = zc - (h - 1) / 2, [sx, sy] = P(x, 0.87 + cur.up, fz), sp = tinted('splash', pal(m.curC[x])), k = this.pulse(a.pulseCur, 1.3);
+        const fz = zc - (h - 1) / 2, [sx, sy] = P(lx, 0.87 + cur.up, fz), sp = tinted('splash', pal(m.curC[x])), k = this.pulse(a.pulseCur, 1.3);
         if (sp) { const w = 0.62 * s * k; c.drawImage(sp, sx - w / 2, sy - w / 2, w, w * ih(sp) / iw(sp)); }
         label(c, String(m.curN[x]), sx, sy, 0.36 * s * k, '#ffffff');
       }
     }
-    // rào: thanh đỏ trắng xoay quanh trụ, hạ xuống sau lần xoá đầu (SwingShut)
+    // rào
     if (m.barrier[x]) {
-      const t = a.barrierT < 0 ? 0 : a.barrierT, ang = lerp(-70, 0, a.barrierT < 0 ? 0 : ease.outBack(t)) * Math.PI / 180;
-      const px = x + 0.45, pz = m.H - 0.35, py = 0.243, len = 0.92;
-      const dx = -Math.cos(ang), dy = -Math.sin(ang);
-      const [bx0, by0] = P(px, 0, pz), [bx1, by1] = P(px, py, pz);
-      c.strokeStyle = '#b8282b'; c.lineWidth = 0.08 * s; c.lineCap = 'round';
-      c.beginPath(); c.moveTo(bx0, by0); c.lineTo(bx1, by1); c.stroke();
-      for (let k = 0; k < 4; k++) {
-        const [ax, ay] = P(px + dx * len * k / 4, py + dy * len * k / 4, pz), [ex, ey] = P(px + dx * len * (k + 1) / 4, py + dy * len * (k + 1) / 4, pz);
-        c.strokeStyle = k % 2 ? '#fff7de' : '#e63333'; c.lineWidth = 0.07 * s; c.lineCap = 'butt';
-        c.beginPath(); c.moveTo(ax, ay); c.lineTo(ex, ey); c.stroke();
+      if (ok(img.barrier_plate) && ok(img.barrier_block)) {
+        // đóng: khối sọc vàng đen bật vào mỗi tấm chắn, nón giao thông giữa làn (CloseBarrierArt)
+        if (a.barrierT >= 0) {
+          const k = Math.max(0, ease.outBack(a.barrierT)), bi = img.barrier_block, w = 0.8 * 0.62 * k;
+          for (const z of [L.topGapZ(x), L.bottomGapZ(x)]) this.flatImage(c, bi, lx, z, w, w * ih(bi) / iw(bi), false);
+          const ci = img.cone;
+          if (ok(ci)) { const [px, py] = P(lx, 0.01, zc), cw = 0.34 * s * k; c.drawImage(ci, px - cw / 2, py - cw * ih(ci) / iw(ci) / 2, cw, cw * ih(ci) / iw(ci)); }
+        }
+      } else {
+        // không có art: thanh đỏ trắng xoay quanh trụ, hạ xuống sau lần xoá đầu (SwingShut)
+        const t = a.barrierT < 0 ? 0 : a.barrierT, ang = lerp(-70, 0, a.barrierT < 0 ? 0 : ease.outBack(t)) * Math.PI / 180;
+        this.poleBarrier(c, lx + 0.45, L.lTop(x) + 0.65 + L.laneEndGap, ang);
       }
-      c.fillStyle = '#2d3046'; c.beginPath(); c.arc(bx1, by1, 0.06 * s, 0, TAU); c.fill();
+    }
+    // thang máy: cột sáng trắng trên làn khi tầng mới lên (ElevatorRiseFx)
+    if (a.riseAt >= 0) {
+      const k = clamp01((this.clock - a.riseAt) / 0.55);
+      if (k >= 1) a.riseAt = -1;
+      else {
+        const w = 0.9 * (1 - 0.25 * k), [x0, y0] = P(lx - w / 2, 0.62, zc + h / 2), [x1, y1] = P(lx + w / 2, 0.62, zc - h / 2);
+        c.fillStyle = `rgba(255,255,255,${0.85 * (1 - k) * (1 - k)})`; round(c, x0, y0, x1 - x0, y1 - y0, 0.2 * s); c.fill();
+      }
     }
   }
 
@@ -947,17 +1395,17 @@ export class PlayView {
   signStep(m, dt) {
     const g = this.sign, used = m.loopCells(), cap = m.cap;
     if (g.used >= 0 && (used !== g.used || cap !== g.cap)) g.pulse = 0;   // SetCount: đổi số thì nảy chữ
-    g.used = used; g.cap = cap; g.W = m.W;
+    g.used = used; g.cap = cap; g.W = m.W; g.BW = m.BW;
     if (g.pulse >= 0 && (g.pulse += dt) >= 0.18) g.pulse = -1;
     if (g.shake >= 0 && (g.shake += dt) >= 0.45) g.shake = -1;
   }
 
-  /** Chân cột ở (W + 0.62, 0, -1.7) (LoopBadgeZ), trượt ngang để cả bảng nằm trong khung (m_ScreenMargin 0.03). */
+  /** Chân cột ở (BW + 0.62, 0, đường dưới - 0.7) (LoopBadgeDz), trượt ngang để cả bảng nằm trong khung (m_ScreenMargin 0.03). */
   signPos(m) {
     const info = meshInfo('sign');
     if (!info || !this.v) return null;
     const { s, ox, W } = this.v, g = this.sign;
-    let x = m.W + 0.62;
+    let x = (m.BW ?? m.W) + 0.62;
     const lo = ox + (x + info.lo[0]) * s, hi = ox + (x + info.hi[0]) * s, mg = 0.03 * W;
     let shift = 0;
     if (hi > W - mg) shift = W - mg - hi;
@@ -965,11 +1413,11 @@ export class PlayView {
     x += shift / s;
     const k = g.shake >= 0 ? g.shake / 0.45 : 1;
     const roll = g.shake >= 0 ? Math.sin(g.shake * 40) * 9 * (1 - k) * Math.PI / 180 : 0;
-    return { x, z: -1.7, roll, info };
+    return { x, z: (this.L?.roadBottomZ ?? -1.45) - 0.7, roll, info };
   }
 
   signHit() {
-    const p = this.signPos({ W: this.sign.W ?? 0 });
+    const p = this.signPos({ W: this.sign.W ?? 0, BW: this.sign.BW ?? this.sign.W ?? 0 });
     if (!p) return;
     const [hx, hy, hz] = p.info.hit, x = p.x + hx, y = hy, z = p.z + hz;
     this.fx.add({ kind: 'glow', x, y, z, life: 0.5, size: 1.6, alpha: 1, color: '#fff3a8' });
@@ -1004,7 +1452,7 @@ export class PlayView {
       c.restore();
       return;
     }
-    const s = this.v.s, [x, y] = this.P(m.W + 0.62, 0, -1.7);
+    const s = this.v.s, [x, y] = this.P(m.BW + 0.62, 0, this.L.roadBottomZ - 0.7);
     const full = m.loopCells() >= m.cap, fl = this.signFlash > 0 ? Math.abs(((this.signFlash * 6) % 2) - 1) : 0;
     const i = img[full || (fl > 0.5 && this.signColor === 'red') ? 'loop_sign_full' : 'loop_sign'];
     // LoopBadge của HUD: bảng tối viền tím trên cột, nghiêng 6°.
@@ -1042,7 +1490,8 @@ export class PlayView {
       const v = this.views.get(b.carId), c = v ? { x: v.x, z: v.z } : L.busCenter(b), [x, y] = P(c.x, 0.3, c.z);
       if (y < this.v.H + s * 0.5) ids.push([b.id, x, y]);
     }
-    const lanes = Array.from({ length: m.W }, (_, x) => { const h = m.hs[x]; return [P(x, 0, m.H - 0.5), P(x, 0, m.H - h - 0.5)]; });
+    // làn: [điểm trên, điểm dưới] (px), crossway là hai khối
+    const lanes = Array.from({ length: m.W }, (_, x) => [P(L.lx(x), 0, L.lTop(x) + 0.5), P(L.lx(x), 0, L.lBottom(x) - 0.5)]);
     return { ids, s, rx: L.jc * s * 0.5, ry: L.jc * s * SIN * 0.5, lanes };
   }
 
@@ -1052,7 +1501,7 @@ export class PlayView {
       // ô trống của làn (bấm để tô) và "+" cuối mỗi cột bãi (thêm xe)
       c.setLineDash([s * 0.08, s * 0.07]); c.lineWidth = Math.max(1, s * 0.025); c.strokeStyle = 'rgba(255,255,255,.55)';
       for (let x = 0; x < m.W; x++) for (let k = m.colCells(x); k < m.hs[x]; k++) {
-        const z = m.H - m.hs[x] + k, [x0, y0] = P(x - 0.36, 0, z + 0.42), [x1, y1] = P(x + 0.36, 0, z - 0.42);
+        const z = L.lBottom(x) + k, lx = L.lx(x), [x0, y0] = P(lx - 0.36, 0, z + 0.42), [x1, y1] = P(lx + 0.36, 0, z - 0.42);
         round(c, x0, y0, x1 - x0, y1 - y0, s * 0.12); c.stroke();
       }
       c.setLineDash([]);
@@ -1065,7 +1514,7 @@ export class PlayView {
       }
     }
     if (e.lane >= 0 && e.lane < m.W) {
-      const h = m.hs[e.lane], [x0, y0] = P(e.lane - 0.5, 0, m.H - 0.5), [x1, y1] = P(e.lane + 0.5, 0, m.H - h - 0.5);
+      const lx = L.lx(e.lane), [x0, y0] = P(lx - 0.5, 0, L.lTop(e.lane) + 0.5), [x1, y1] = P(lx + 0.5, 0, L.lBottom(e.lane) - 0.5);
       c.strokeStyle = '#ffd23f'; c.lineWidth = Math.max(2, s * 0.06); c.setLineDash([s * 0.15, s * 0.1]);
       c.strokeRect(x0, y0, x1 - x0, y1 - y0); c.setLineDash([]);
     }
@@ -1081,7 +1530,7 @@ export class PlayView {
     const P = this.P, s = this.v.s, L = this.L;
     const cellAt = h => {
       if (!h) return null;
-      if (h.kind === 'lane') { const k = Math.min(h.slot, m.colCells(h.x)); return { x: h.x, z: m.H - m.hs[h.x] + k, w: 0.8, l: 0.92 }; }
+      if (h.kind === 'lane') { const k = Math.min(h.slot, m.colCells(h.x)); return { x: L.lx(h.x), z: L.lBottom(h.x) + k, w: 0.8, l: 0.92 }; }
       if (h.kind === 'lot') { const n = m.buses.filter(b => b.x === h.ci).length, p = L.jp(h.ci, m.jh - 1 - Math.min(h.row, n)); return { x: p.x, z: p.z, w: 0.8, l: L.jc * 0.92 }; }
       return null;
     };
