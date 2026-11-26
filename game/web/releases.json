@@ -1,7 +1,7 @@
 [
   {
     "version": "0.1.0",
-    "date": "",
+    "date": "26/11/2026",
     "title": "Bản đầu của ParkingLevel: editor, chơi thử và giải level",
     "added": [
       "Danh sách level và Thư viện: ảnh level vẽ như trong game; tìm theo số, dải số, chữ không dấu; sửa, lưu, xem lịch sử.",

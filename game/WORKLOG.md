@@ -7,7 +7,7 @@ Nhật ký để phiên Claude mới biết tool đang ở đâu. Đọc cùng `
 
 - Nhánh `main`, push lên `origin` = `khoadv-15112001/parking-loop-level-tool`. Repo trong `SonatGameProduct` chờ techlead tạo.
 - Unity đã port tới `d1adb3de` (25/11/2026) cả Core (luật, có crossway) lẫn View (hình, chuyển động, VFX).
-- Changelog `game/web/releases.json`: bản 0.1.0 chưa tag (date trống).
+- Bản phát hành: tag `parkingloop-v0.1.0` (26/11/2026). Tag phải đúng dạng `parkingloop-v{semver}` của bi.yaml; tag `1.0.0` đặt nhầm đã xoá.
 - **Chờ người dùng so với game thật** (chưa ai xem cạnh nhau trên máy):
   - Cảm giác chơi: tốc độ xe ra cổng, cua nhập vòng, trượt đuôi, nổ khi xoá làn, rung / zoom camera, popup combo.
   - Xe trong làn khoá nhô cao hơn thùng khoá (xe cao 0.66, thùng 0.49, đúng số đo trong code Unity), cần xem game có vậy không.
@@ -21,6 +21,9 @@ Nhật ký để phiên Claude mới biết tool đang ở đâu. Đọc cùng `
 - Chưa làm: âm nhạc nền; haptic (web không có); chụp ảnh level vào server ("Chụp ảnh" của core cần bridge WebGL của game).
 
 ## Nhật ký
+
+### 26/11/2026 — Tag phát hành
+- Build BI fail sau khi tạo tag `1.0.0`: không khớp kênh `parkingloop-v{semver}` trong bi.yaml (file build đủ: bi.yaml + Dockerfile.node). Xoá `1.0.0`, đặt date 0.1.0, tag `parkingloop-v0.1.0`. Chưa xem log build BI; repo vẫn ở GitHub cá nhân.
 
 ### 25/11/2026 — Gameplay Unity mới (crossway, feeling, obstacle) vào Chơi thử
 - Yêu cầu: lấy phần gameplay Parking Loop đã commit (`923942cc..d1adb3de`) vào chơi thử. Phiên trước (tài khoản khác) làm
